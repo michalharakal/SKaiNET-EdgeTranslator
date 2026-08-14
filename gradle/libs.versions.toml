@@ -23,6 +23,14 @@ nucleus = "2.4.3"
 # litertlm_jni.dll nativeGenerateContent / sendMessage). 0.14.0 is the last
 # good desktop JNI. https://github.com/google-ai-edge/LiteRT-LM/issues/3230
 litertlm = "0.14.0"
+# SKaiNET engine + transformers LLM layer. 0.40.2/0.40.3 are LOCAL-ONLY interim builds
+# (publishToMavenLocal from the SKaiNET/SKaiNET-transformers `develop` clones, not on Maven
+# Central) carrying the fix for SKaiNET#991/#992 (Q6_K/Q5_1/Q5_0 matmul ClassCastException on
+# MemorySegment-backed activations). Revert to the last Central release once a real SKaiNET
+# release ships the fix. Re-run docs/PERF-LOGBOOK.md's benchmark before bumping further
+# (SKaiNET-transformers docs: "nothing here is stable").
+skainet = "0.40.2"
+skainetTransformers = "0.40.3"
 filekit = "0.15.0"
 structured-coroutines = "1.1.0"
 piper-jni = "1.4.2"
@@ -84,6 +92,24 @@ nucleus-native-http-ktor = { module = "dev.nucleusframework:nucleus.native-http-
 nucleus-updater-runtime = { module = "dev.nucleusframework:nucleus.updater-runtime", version.ref = "nucleus" }
 litertlm-android = { module = "com.google.ai.edge.litertlm:litertlm-android", version.ref = "litertlm" }
 litertlm-jvm = { module = "com.google.ai.edge.litertlm:litertlm-jvm", version.ref = "litertlm" }
+skainet-bom = { module = "sk.ainet:skainet-bom", version.ref = "skainet" }
+skainet-lang-core = { module = "sk.ainet.core:skainet-lang-core" }
+# Interim SKaiNET#991/#992 fix: version-managed by the "skainet" ref above (local-only
+# 0.40.2 publish, whole SKaiNET project republished together so no sibling module is left
+# requesting the old version). See docs/PERF-LOGBOOK.md.
+skainet-backend-cpu = { module = "sk.ainet.core:skainet-backend-cpu" }
+skainet-backend-native-cpu = { module = "sk.ainet.core:skainet-backend-native-cpu" }
+skainet-backend-jni-cpu = { module = "sk.ainet.core:skainet-backend-jni-cpu" }
+skainet-io-core = { module = "sk.ainet.core:skainet-io-core" }
+skainet-io-gguf = { module = "sk.ainet.core:skainet-io-gguf" }
+skainet-transformers-bom = { module = "sk.ainet.transformers:skainet-transformers-bom", version.ref = "skainetTransformers" }
+skainet-transformers-core = { module = "sk.ainet.transformers:skainet-transformers-core" }
+# Llama family (not Gemma — see docs/PERF-LOGBOOK.md Phase 0 notes: Gemma4ChatModel is FP32-only,
+# ~20GB resident, GGUF quantization is a known unresolved upstream issue). Llama is the "most
+# exercised" family in SKaiNET-transformers; kllama ships NEON kernels on Android transitively.
+skainet-transformers-runtime-kllama = { module = "sk.ainet.transformers:skainet-transformers-runtime-kllama" }
+skainet-transformers-inference-llama = { module = "sk.ainet.transformers:skainet-transformers-inference-llama" }
+skainet-transformers-agent = { module = "sk.ainet.transformers:skainet-transformers-agent" }
 filekit-core = { module = "io.github.vinceglb:filekit-core", version.ref = "filekit" }
 filekit-dialogs = { module = "io.github.vinceglb:filekit-dialogs", version.ref = "filekit" }
 piper-jni = { module = "io.github.jvoice-project:piper-jni", version.ref = "piper-jni" }

@@ -49,6 +49,7 @@ import dev.nucleusframework.offlinetranslator.domain.LlmBackend
 import dev.nucleusframework.offlinetranslator.domain.LlmKeepAlive
 import dev.nucleusframework.offlinetranslator.domain.LlmModel
 import dev.nucleusframework.offlinetranslator.domain.ModelInfo
+import dev.nucleusframework.offlinetranslator.domain.TranslationEngine
 import dev.nucleusframework.offlinetranslator.domain.UiLanguage
 import dev.nucleusframework.offlinetranslator.domain.UserSettings
 import dev.nucleusframework.offlinetranslator.domain.VoiceDownloadState
@@ -183,6 +184,22 @@ private fun ModelSection(
                 stringResource(Res.string.engine_cpu),
                 selected = settings.backend == LlmBackend.Cpu,
                 onClick = { onIntent(AppIntent.SetLlmBackend(LlmBackend.Cpu)) },
+            )
+        }
+        Divider()
+        // Experimental — not localized yet, see docs/PERF-LOGBOOK.md for the SKaiNET comparison
+        // this toggle exists to run. SKaiNet is CPU-only (no GPU/NPU); the accelerator badge
+        // still tells the truth per engine via LlmRuntime.report(...).
+        ChipsRow("Engine (experimental)") {
+            Chip(
+                "LiteRT-LM",
+                selected = settings.engine == TranslationEngine.LiteRt,
+                onClick = { onIntent(AppIntent.SetTranslationEngine(TranslationEngine.LiteRt)) },
+            )
+            Chip(
+                "SKaiNET",
+                selected = settings.engine == TranslationEngine.SkaiNet,
+                onClick = { onIntent(AppIntent.SetTranslationEngine(TranslationEngine.SkaiNet)) },
             )
         }
         Divider()

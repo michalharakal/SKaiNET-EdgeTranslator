@@ -1,6 +1,7 @@
 package dev.nucleusframework.offlinetranslator.engine
 
 import dev.nucleusframework.offlinetranslator.domain.LlmBackend
+import dev.nucleusframework.offlinetranslator.domain.TranslationEngine
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -10,6 +11,9 @@ enum class LlmAccelerator { None, Cpu, Gpu, Npu }
 object LlmRuntime {
     @Volatile
     var preference: LlmBackend = LlmBackend.Auto
+
+    @Volatile
+    var engine: TranslationEngine = TranslationEngine.LiteRt
 
     private val _accelerator = MutableStateFlow(LlmAccelerator.None)
     val accelerator: StateFlow<LlmAccelerator> = _accelerator.asStateFlow()

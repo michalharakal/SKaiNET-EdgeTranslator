@@ -27,6 +27,7 @@ internal expect object Platform {
     fun truncate(path: String)
     fun now(): Long
     fun applyLocale(tag: String)
+    fun getEnv(name: String): String?
 
     /**
      * The OS language, captured at startup — [applyLocale] overwrites the default locale, so this

@@ -8,6 +8,7 @@ import dev.nucleusframework.offlinetranslator.domain.LlmBackend
 import dev.nucleusframework.offlinetranslator.domain.LlmKeepAlive
 import dev.nucleusframework.offlinetranslator.domain.LlmModel
 import dev.nucleusframework.offlinetranslator.domain.ThemeMode
+import dev.nucleusframework.offlinetranslator.domain.TranslationEngine
 import dev.nucleusframework.offlinetranslator.domain.UiLanguage
 
 sealed interface AppIntent {
@@ -51,6 +52,7 @@ sealed interface AppIntent {
     data class SetUiLanguage(val language: UiLanguage?) : AppIntent
     data class SetLangNameStyle(val style: LangNameStyle) : AppIntent
     data class SetLlmBackend(val backend: LlmBackend) : AppIntent
+    data class SetTranslationEngine(val engine: TranslationEngine) : AppIntent
     data class SetLlmKeepAlive(val mode: LlmKeepAlive) : AppIntent
 
     data object PauseDownload : AppIntent

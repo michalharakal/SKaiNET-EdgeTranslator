@@ -22,7 +22,9 @@ kotlin {
     }
 
     jvm {
-        compilerOptions { jvmTarget.set(JvmTarget.JVM_17) }
+        // SKaiNET's SIMD path needs jdk.incubator.vector (21+); calling its Kotlin API directly
+        // (not through the Java-interop KLlamaJava facade) needs 21+ bytecode for inline functions.
+        compilerOptions { jvmTarget.set(JvmTarget.JVM_21) }
     }
 
     sourceSets {
@@ -66,6 +68,17 @@ kotlin {
             implementation(libs.sqlDelight.driver.android)
             implementation(libs.litertlm.android)
             implementation(libs.androidx.activityCompose)
+            implementation(project.dependencies.platform(libs.skainet.bom))
+            implementation(libs.skainet.lang.core)
+            implementation(libs.skainet.backend.cpu)
+            implementation(libs.skainet.backend.jni.cpu)
+            implementation(libs.skainet.io.core)
+            implementation(libs.skainet.io.gguf)
+            implementation(project.dependencies.platform(libs.skainet.transformers.bom))
+            implementation(libs.skainet.transformers.core)
+            implementation(libs.skainet.transformers.runtime.kllama)
+            implementation(libs.skainet.transformers.inference.llama)
+            implementation(libs.skainet.transformers.agent)
         }
 
         jvmMain.dependencies {
@@ -84,6 +97,17 @@ kotlin {
             implementation(libs.nucleus.updater.runtime)
             implementation(libs.litertlm.jvm)
             implementation(libs.piper.jni)
+            implementation(project.dependencies.platform(libs.skainet.bom))
+            implementation(libs.skainet.lang.core)
+            implementation(libs.skainet.backend.native.cpu)
+            implementation(libs.skainet.backend.cpu)
+            implementation(libs.skainet.io.core)
+            implementation(libs.skainet.io.gguf)
+            implementation(project.dependencies.platform(libs.skainet.transformers.bom))
+            implementation(libs.skainet.transformers.core)
+            implementation(libs.skainet.transformers.runtime.kllama)
+            implementation(libs.skainet.transformers.inference.llama)
+            implementation(libs.skainet.transformers.agent)
         }
     }
 }

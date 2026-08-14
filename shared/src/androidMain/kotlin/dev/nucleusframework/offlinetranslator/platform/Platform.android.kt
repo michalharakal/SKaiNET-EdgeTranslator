@@ -92,6 +92,10 @@ internal actual object Platform {
     // System resources, not Locale.getDefault() — applyLocale() overwrites the latter, and the user
     // can change the device language without the process being killed.
     actual fun systemLanguage(): String = android.content.res.Resources.getSystem().configuration.locales[0].language
+
+    // Apps launched by the launcher have no shell env — this only sees anything when set by the
+    // process that started the JVM (e.g. an Android Studio run config, `run-as`, instrumentation).
+    actual fun getEnv(name: String): String? = System.getenv(name)
 }
 
 internal suspend fun filekitSha256(path: String): String? {

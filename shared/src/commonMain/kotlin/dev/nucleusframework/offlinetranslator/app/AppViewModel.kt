@@ -19,6 +19,7 @@ import dev.nucleusframework.offlinetranslator.domain.LlmBackend
 import dev.nucleusframework.offlinetranslator.domain.LlmKeepAlive
 import dev.nucleusframework.offlinetranslator.domain.LlmModel
 import dev.nucleusframework.offlinetranslator.domain.MODEL_IDLE_RELEASE_MS
+import dev.nucleusframework.offlinetranslator.domain.TranslationEngine
 import dev.nucleusframework.offlinetranslator.domain.VoiceDownloadState
 import dev.nucleusframework.offlinetranslator.domain.allowedOn
 import dev.nucleusframework.offlinetranslator.domain.filterHistory
@@ -38,6 +39,7 @@ import dev.nucleusframework.offlinetranslator.engine.PiperVoiceSpec
 import dev.nucleusframework.offlinetranslator.engine.PiperVoices
 import dev.nucleusframework.offlinetranslator.engine.SilentMic
 import dev.nucleusframework.offlinetranslator.engine.SilentTts
+import dev.nucleusframework.offlinetranslator.engine.SkaiNetModels
 import dev.nucleusframework.offlinetranslator.engine.TranslationMode
 import dev.nucleusframework.offlinetranslator.engine.TranslationRequest
 import dev.nucleusframework.offlinetranslator.engine.TranslationResult
@@ -133,7 +135,7 @@ class AppViewModel(
         if (backStack.last() == AppKey.Download && !s.download.done) {
             startDownload()
         }
-        preloadIfKeptReady(s.data.model.path)
+        preloadIfKeptReady(activeModelPath(s.data))
     }
 
     override fun onCleared() {
@@ -231,13 +233,19 @@ class AppViewModel(
             is AppIntent.SetLlmBackend -> {
                 LlmRuntime.preference = intent.backend
                 persist(now = true)
-                preloadIfKeptReady(_state.value.data.model.path)
+                preloadIfKeptReady(activeModelPath(_state.value.data))
+            }
+
+            is AppIntent.SetTranslationEngine -> {
+                LlmRuntime.engine = intent.engine
+                persist(now = true)
+                preloadIfKeptReady(activeModelPath(_state.value.data))
             }
 
             is AppIntent.SetLlmKeepAlive -> {
                 persist(now = true)
                 if (intent.mode == LlmKeepAlive.AlwaysOn) {
-                    preloadIfKeptReady(_state.value.data.model.path)
+                    preloadIfKeptReady(activeModelPath(_state.value.data))
                 } else {
                     cancelIdleRelease()
                     scope.launch { translator.release() }
@@ -333,6 +341,15 @@ class AppViewModel(
         val ram = hostRamBytes()
         data = coerceModelForRam(data, ram)
         LlmRuntime.preference = data.settings.backend
+        LlmRuntime.engine = data.settings.engine
+        // Startup override for testing/benchmarking — session-only, never persisted to settings.
+        // EDGETRANSLATOR_ENGINE=skainet|litert (case-insensitive); unset or unrecognized is a no-op.
+        Platform.getEnv("EDGETRANSLATOR_ENGINE")?.trim()?.lowercase()?.let { value ->
+            when (value) {
+                "skainet" -> LlmRuntime.engine = TranslationEngine.SkaiNet
+                "litert", "litertlm", "litert-lm" -> LlmRuntime.engine = TranslationEngine.LiteRt
+            }
+        }
         val catalog = GemmaModels.of(data.settings.selectedModel)
         if (modelOnDisk(catalog) && (!data.model.installed || data.model.id != catalog.id)) {
             data = data.copy(model = catalog.toInfo(clock()))
@@ -491,6 +508,8 @@ class AppViewModel(
         AppIntent.DropUnsupported -> s.copy(message = AppMessage.DropUnsupported)
 
         is AppIntent.SetLlmBackend -> s.updateSettings { it.copy(backend = intent.backend) }
+
+        is AppIntent.SetTranslationEngine -> s.updateSettings { it.copy(engine = intent.engine) }
 
         is AppIntent.SetLlmKeepAlive -> s.updateSettings { it.copy(keepAlive = intent.mode) }
 
@@ -764,6 +783,7 @@ class AppViewModel(
         scope.launch { runCatching { mic.stop() } }
         unloadEngine()
         LlmRuntime.preference = LlmBackend.Auto
+        LlmRuntime.engine = TranslationEngine.LiteRt
         GemmaModels.all.forEach { catalog ->
             if (modelOwnedByApp(catalog)) deleteModelFiles(catalog)
             else Platform.delete(catalog.partialPath())
@@ -815,8 +835,7 @@ class AppViewModel(
             )
         }
         persist(now = true)
-        val next = _state.value.data.model
-        if (next.installed) preloadIfKeptReady(next.path)
+        preloadIfKeptReady(activeModelPath(_state.value.data))
     }
 
     private fun unloadEngine() {
@@ -1006,6 +1025,17 @@ class AppViewModel(
     }
 
     private fun keepModelReady(): Boolean = _state.value.data.settings.keepAlive == LlmKeepAlive.AlwaysOn
+
+    /**
+     * `data.model.path` is always the LiteRT-LM catalog path (see [GemmaModels]) — SKaiNet has its
+     * own, separate GGUF catalog ([SkaiNetModels]) with no download UI wired up yet. Blank (not the
+     * wrong file) when the SKaiNet GGUF isn't on disk, so [Translator.translate] cleanly reports
+     * [TranslationResult.Unavailable] instead of failing GGUF-magic validation against a litertlm file.
+     */
+    private fun activeModelPath(data: AppData): String = when (LlmRuntime.engine) {
+        TranslationEngine.SkaiNet -> SkaiNetModels.of(data.settings.selectedModel).takeIf { it.isOnDisk() }?.destPath().orEmpty()
+        TranslationEngine.LiteRt -> data.model.path
+    }
 
     private fun preloadIfKeptReady(path: String) {
         if (path.isBlank() || !keepModelReady()) return
@@ -1426,7 +1456,7 @@ class AppViewModel(
                 text = "",
                 sourceLang = s.translation.sourceLang,
                 targetLang = s.translation.targetLang,
-                modelPath = s.data.model.path,
+                modelPath = activeModelPath(s.data),
                 audioWav = wav,
             ),
         )
@@ -1470,7 +1500,7 @@ class AppViewModel(
                     text = "",
                     sourceLang = current.translation.sourceLang,
                     targetLang = current.translation.targetLang,
-                    modelPath = current.data.model.path,
+                    modelPath = activeModelPath(current.data),
                     image = image,
                 ),
             )
@@ -1575,7 +1605,7 @@ class AppViewModel(
                 text = text,
                 sourceLang = from,
                 targetLang = to,
-                modelPath = s.data.model.path,
+                modelPath = activeModelPath(s.data),
                 onPartial = { partial ->
                     mutate { current ->
                         if (!sameTranslateInput(current.translation, text, from, to)) current
@@ -1667,7 +1697,7 @@ class AppViewModel(
                 text = text,
                 sourceLang = s.translation.sourceLang,
                 targetLang = s.translation.sourceLang,
-                modelPath = s.data.model.path,
+                modelPath = activeModelPath(s.data),
                 mode = TranslationMode.Proofread,
                 onPartial = { partial ->
                     mutate {

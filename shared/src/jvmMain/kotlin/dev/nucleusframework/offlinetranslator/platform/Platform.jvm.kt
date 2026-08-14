@@ -105,6 +105,8 @@ internal actual object Platform {
     private val bootLanguage: String = java.util.Locale.getDefault().language
 
     actual fun systemLanguage(): String = bootLanguage
+
+    actual fun getEnv(name: String): String? = System.getenv(name)
 }
 
 internal suspend fun filekitSha256(path: String): String? {

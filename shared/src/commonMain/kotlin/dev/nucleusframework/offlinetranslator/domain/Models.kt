@@ -57,6 +57,9 @@ enum class ThemeMode { System, Light, Dark }
 
 enum class LlmBackend { Auto, Npu, Gpu, Cpu }
 
+/** Which inference engine runs translation. SKaiNet has no GPU/NPU backend — CPU only. */
+enum class TranslationEngine { LiteRt, SkaiNet }
+
 /** When the LLM stays in RAM. OnDemand loads on first use and unloads after idle. */
 enum class LlmKeepAlive { OnDemand, AlwaysOn }
 
@@ -134,6 +137,7 @@ data class UserSettings(
     val modelDir: String = "",
     val selectedModel: LlmModel = LlmModel.Fast,
     val backend: LlmBackend = LlmBackend.Auto,
+    val engine: TranslationEngine = TranslationEngine.LiteRt,
     val keepAlive: LlmKeepAlive = LlmKeepAlive.OnDemand,
     val langNames: LangNameStyle = LangNameStyle.System,
     val selectedVoices: Map<String, String> = emptyMap(),

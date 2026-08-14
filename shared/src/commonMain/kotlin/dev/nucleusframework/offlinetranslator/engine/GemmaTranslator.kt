@@ -4,16 +4,12 @@ import dev.nucleusframework.offlinetranslator.domain.Languages
 import dev.nucleusframework.offlinetranslator.domain.LlmBackend
 import dev.nucleusframework.offlinetranslator.platform.IoDispatcher
 import dev.nucleusframework.offlinetranslator.platform.Platform
-import dev.zacsweers.metro.AppScope
-import dev.zacsweers.metro.ContributesBinding
-import dev.zacsweers.metro.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
-@ContributesBinding(AppScope::class)
-@Inject
+/** Not `@ContributesBinding` directly: wired behind [EngineSwitchingTranslator] via qualifiers. */
 class GemmaTranslator(
     private val exists: (String) -> Boolean = { Platform.exists(it) },
     private val now: () -> Long = { Platform.now() },
