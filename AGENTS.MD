@@ -60,7 +60,28 @@ build for iteration instead (recommended now that both halves substitute reliabl
   (pushed, no PR yet — it's a findings/diagnostics branch, not a finished fix),
   `github.com/SKaiNET-developers/SKaiNET-transformers`.
 
-### In progress, NOT resolved: getting real Gemma 4 E2B IT running via SKaiNET
+### ROOT CAUSE FOUND (2026-08-15, later same session): v_norm was disabled
+
+**The catastrophic immediate-`<eos>`/gibberish decode collapse below is fixed.** One line in
+`SKaiNET-transformers/llm-inference/gemma/.../GemmaNetworkDef.kt`: `vNormNoScale = false` →
+`true`. `MultiHeadAttention.kt` already had a correct, tested V-normalization code path
+(`Gemma4RMSNorm(head_dim, with_scale=False)`, matching real `transformers` source exactly), but
+it was disabled for Gemma 4 based on a comment about `gemma3` (a different architecture
+generation) not needing it — that finding got incorrectly generalized to `gemma4`, which *does*
+need it. Filed as `SKaiNET-transformers#325` / PR `#326`, verified via a direct
+forward-hook comparison against the real `google/gemma-4-E2B-it` HF checkpoint (not just the
+GGUF) — see `GEMMA4_E2B_SKAINET_FINDINGS.md` Run 6 for the full trail.
+
+**Not a 100% fix**: `Gemma4E2BToolCallSmokeTest` still fails — decode is now coherent English
+instead of catastrophically broken, but degrades into a repetition loop after a few tokens
+rather than reaching the exact trained `<|tool_call>...` format. Candidate follow-up areas
+(not yet checked with the same rigor as v_norm): `qkNorm` epsilon/unit-offset exactness, `gelu`
+formula (HF uses `gelu_pytorch_tanh` specifically), final-logit-softcapping interaction now that
+logit magnitudes are much more reasonable. Whether to keep chasing this or treat it as an
+accepted quantization/precision boundary is an open call — the investigation's primary
+objective (decode no longer catastrophically broken) is met.
+
+### Older, now-resolved framing kept below for the full investigation history
 
 Separate from the (working, merged) Llama integration above. Full plan (this exact file may not
 exist on a new machine — it's a Claude Code plan file, not part of either repo):
