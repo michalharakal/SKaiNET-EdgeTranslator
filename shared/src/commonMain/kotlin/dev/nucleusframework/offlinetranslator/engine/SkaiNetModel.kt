@@ -66,9 +66,10 @@ object SkaiNetModels {
         name = "Llama 3.2 3B Instruct",
         fileName = "Llama-3.2-3B-Instruct-Q4_K_M.gguf",
         repo = "unsloth/Llama-3.2-3B-Instruct-GGUF",
-        bytes = 2_019_377_696L,
-        // Verify during Phase 1 implementation against the actual published asset.
-        sha256 = "",
+        // Verified against the published asset's Content-Length (was 2_019_377_696 — a stale/
+        // typo'd value that made isOnDisk() never match a correctly-downloaded file).
+        bytes = 2_019_377_600L,
+        sha256 = "6c99cc00ae910f6a532a80022cb4bc1939094527a089c29294b841c0bd87f74d",
     )
     val all = listOf(Fast, Precise)
 
