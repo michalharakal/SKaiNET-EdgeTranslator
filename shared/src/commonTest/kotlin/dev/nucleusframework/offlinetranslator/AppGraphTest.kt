@@ -2,7 +2,7 @@ package dev.nucleusframework.offlinetranslator
 
 import dev.nucleusframework.offlinetranslator.data.FileStore
 import dev.nucleusframework.offlinetranslator.di.createAppGraph
-import dev.nucleusframework.offlinetranslator.engine.GemmaTranslator
+import dev.nucleusframework.offlinetranslator.engine.EngineSwitchingTranslator
 import dev.nucleusframework.offlinetranslator.engine.HuggingFaceModelDownloader
 import kotlin.test.Test
 import kotlin.test.assertIs
@@ -13,7 +13,10 @@ class AppGraphTest {
     fun productionGraphBindsImplementations() {
         val graph = createAppGraph()
         assertIs<FileStore>(graph.store)
-        assertIs<GemmaTranslator>(graph.translator)
+        // EngineSwitchingTranslator delegates to GemmaTranslator/SkaiNetTranslator per
+        // UserSettings.engine (Settings -> "Engine (experimental)") — was a bare GemmaTranslator
+        // before the SkaiNet engine option existed.
+        assertIs<EngineSwitchingTranslator>(graph.translator)
         assertIs<HuggingFaceModelDownloader>(graph.downloader)
     }
 }

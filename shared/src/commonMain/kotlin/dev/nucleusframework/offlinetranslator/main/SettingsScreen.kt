@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.skydoves.compose.stability.runtime.TraceRecomposition
 import dev.nucleusframework.offlinetranslator.app.AppIntent
+import dev.nucleusframework.offlinetranslator.app.DownloadTarget
 import dev.nucleusframework.offlinetranslator.domain.DownloadPhase
 import dev.nucleusframework.offlinetranslator.domain.DownloadState
 import dev.nucleusframework.offlinetranslator.domain.LangNameStyle
@@ -49,6 +50,7 @@ import dev.nucleusframework.offlinetranslator.domain.LlmBackend
 import dev.nucleusframework.offlinetranslator.domain.LlmKeepAlive
 import dev.nucleusframework.offlinetranslator.domain.LlmModel
 import dev.nucleusframework.offlinetranslator.domain.ModelInfo
+import dev.nucleusframework.offlinetranslator.domain.SkaiNetFamily
 import dev.nucleusframework.offlinetranslator.domain.TranslationEngine
 import dev.nucleusframework.offlinetranslator.domain.UiLanguage
 import dev.nucleusframework.offlinetranslator.domain.UserSettings
@@ -61,6 +63,8 @@ import dev.nucleusframework.offlinetranslator.engine.CatalogModel
 import dev.nucleusframework.offlinetranslator.engine.GemmaModels
 import dev.nucleusframework.offlinetranslator.engine.LlmRuntime
 import dev.nucleusframework.offlinetranslator.engine.PiperVoices
+import dev.nucleusframework.offlinetranslator.engine.SkaiNetCatalogModel
+import dev.nucleusframework.offlinetranslator.engine.SkaiNetModels
 import dev.nucleusframework.offlinetranslator.platform.Platform
 import dev.nucleusframework.offlinetranslator.platform.systemUiLanguage
 import dev.nucleusframework.offlinetranslator.ui.Chip
@@ -78,6 +82,8 @@ fun SettingsScreen(
     settings: UserSettings,
     model: ModelInfo,
     download: DownloadState,
+    skainetModels: Map<SkaiNetFamily, ModelInfo>,
+    skainetDownloads: Map<SkaiNetFamily, DownloadState>,
     voiceDownload: VoiceDownloadState,
     ttsReady: Boolean,
     sourceLang: String,
@@ -94,7 +100,7 @@ fun SettingsScreen(
         ) {
             Column(Modifier.widthIn(max = 920.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(28.dp)) {
                 DisplaySection(settings, onIntent)
-                ModelSection(settings, model, download, hostRamBytes, onIntent)
+                ModelSection(settings, model, download, skainetModels, skainetDownloads, hostRamBytes, onIntent)
                 if (ttsReady) VoicesSection(settings, voiceDownload, sourceLang, targetLang, onIntent)
                 StorageSection(ttsReady)
                 ResetSection(onIntent)
@@ -152,6 +158,8 @@ private fun ModelSection(
     settings: UserSettings,
     model: ModelInfo,
     download: DownloadState,
+    skainetModels: Map<SkaiNetFamily, ModelInfo>,
+    skainetDownloads: Map<SkaiNetFamily, DownloadState>,
     hostRamBytes: Long,
     onIntent: (AppIntent) -> Unit,
 ) {
@@ -202,6 +210,20 @@ private fun ModelSection(
                 onClick = { onIntent(AppIntent.SetTranslationEngine(TranslationEngine.SkaiNet)) },
             )
         }
+        if (settings.engine == TranslationEngine.SkaiNet) {
+            Divider()
+            // Which SkaiNet family actually runs — the model blocks below always show every
+            // family's install state, but only one family is "live" at a time.
+            ChipsRow("SkaiNet family (experimental)") {
+                SkaiNetFamily.entries.forEach { family ->
+                    Chip(
+                        family.displayName,
+                        selected = settings.skainetFamily == family,
+                        onClick = { onIntent(AppIntent.SetSkaiNetFamily(family)) },
+                    )
+                }
+            }
+        }
         Divider()
         ChipsRow(stringResource(Res.string.settings_model_keep_alive)) {
             Chip(
@@ -228,6 +250,10 @@ private fun ModelSection(
             modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 14.dp),
         )
         Divider()
+        SectionLabel(
+            "Gemma · LiteRT-LM",
+            Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 4.dp),
+        )
         Divided(GemmaModels.all) { catalog ->
             val installed = catalog.isOnDisk() || (model.installed && model.id == catalog.id)
             val mine = catalog.id == selected
@@ -272,24 +298,127 @@ private fun ModelSection(
                     null
                 },
                 onPause = if (running) {
-                    { onIntent(AppIntent.PauseDownload) }
+                    { onIntent(AppIntent.PauseDownload(DownloadTarget.Gemma)) }
                 } else {
                     null
                 },
                 onResume = if (paused || failed) {
                     {
-                        onIntent(if (failed) AppIntent.DownloadModel(catalog.id) else AppIntent.ResumeDownload)
+                        onIntent(if (failed) AppIntent.DownloadModel(catalog.id) else AppIntent.ResumeDownload(DownloadTarget.Gemma))
                     }
                 } else {
                     null
                 },
                 onCancel = if (running || paused) {
-                    { onIntent(AppIntent.CancelDownload) }
+                    { onIntent(AppIntent.CancelDownload(DownloadTarget.Gemma)) }
                 } else {
                     null
                 },
             )
         }
+        SkaiNetFamily.entries.forEach { family ->
+            Divider()
+            SkaiNetFamilyBlock(
+                family = family,
+                skainetSelected = settings.skainetSelection.getValue(family),
+                skainetModel = skainetModels.getValue(family),
+                skainetDownload = skainetDownloads.getValue(family),
+                hostRamBytes = hostRamBytes,
+                ui = ui,
+                onIntent = onIntent,
+            )
+        }
+    }
+}
+
+/** One family's model block under the SkaiNet engine section — see [ModelSection]. */
+@Composable
+private fun SkaiNetFamilyBlock(
+    family: SkaiNetFamily,
+    skainetSelected: LlmModel,
+    skainetModel: ModelInfo,
+    skainetDownload: DownloadState,
+    hostRamBytes: Long,
+    ui: UiLanguage,
+    onIntent: (AppIntent) -> Unit,
+) {
+    SectionLabel(
+        "${family.displayName} · SKaiNet",
+        Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 4.dp),
+    )
+    Divided(SkaiNetModels.catalogFor(family)) { catalog ->
+        val installed = catalog.isOnDisk() || (skainetModel.installed && skainetModel.id == catalog.id)
+        val mine = catalog.id == skainetSelected
+        val failed = mine && skainetDownload.phase == DownloadPhase.Failed
+        val paused = mine && skainetDownload.paused
+        val running = mine && skainetDownload.running
+        val inFlight = running || paused || failed
+        val allowed = catalog.id.allowedOn(hostRamBytes)
+        val current = installed && skainetModel.installed && skainetModel.id == catalog.id
+        val sizeBody = catalog.body(formatBytesUi(catalog.bytes, ui))
+        val body = if (allowed) {
+            sizeBody
+        } else {
+            "$sizeBody · ${stringResource(Res.string.model_ram_required, catalog.id.minRamGib())}"
+        }
+        ChoiceRow(
+            title = catalog.title(),
+            body = body,
+            installed = installed,
+            selected = current,
+            muted = (!installed && !inFlight) || (!allowed && !current),
+            progress = if (inFlight) skainetDownload.fraction else null,
+            progressLabel = if (running || paused) {
+                downloadStats(
+                    skainetDownload.fraction,
+                    skainetDownload.bytesDownloaded,
+                    skainetDownload.totalBytes,
+                    skainetDownload.speedBps,
+                    ui,
+                )
+            } else {
+                null
+            },
+            error = if (failed) skainetDownload.error?.text(ui) else null,
+            onClick = if (installed && allowed) {
+                { onIntent(AppIntent.SelectSkaiNetModel(family, catalog.id)) }
+            } else {
+                null
+            },
+            onDelete = if (installed && !inFlight) {
+                { onIntent(AppIntent.DeleteSkaiNetModel(family, catalog.id)) }
+            } else {
+                null
+            },
+            onDownload = if (!installed && !inFlight && allowed) {
+                { onIntent(AppIntent.DownloadSkaiNetModel(family, catalog.id)) }
+            } else {
+                null
+            },
+            onPause = if (running) {
+                { onIntent(AppIntent.PauseDownload(DownloadTarget.SkaiNet(family))) }
+            } else {
+                null
+            },
+            onResume = if (paused || failed) {
+                {
+                    onIntent(
+                        if (failed) {
+                            AppIntent.DownloadSkaiNetModel(family, catalog.id)
+                        } else {
+                            AppIntent.ResumeDownload(DownloadTarget.SkaiNet(family))
+                        },
+                    )
+                }
+            } else {
+                null
+            },
+            onCancel = if (running || paused) {
+                { onIntent(AppIntent.CancelDownload(DownloadTarget.SkaiNet(family))) }
+            } else {
+                null
+            },
+        )
     }
 }
 
@@ -685,5 +814,17 @@ private fun CatalogModel.title(): String = stringResource(
 @Composable
 private fun CatalogModel.body(size: String): String = stringResource(
     if (id == LlmModel.Precise) Res.string.model_precise_body else Res.string.model_fast_body,
+    size,
+)
+
+@Composable
+private fun SkaiNetCatalogModel.title(): String = stringResource(
+    if (id == LlmModel.Precise) Res.string.model_precise_title else Res.string.model_fast_title,
+)
+
+@Composable
+private fun SkaiNetCatalogModel.body(size: String): String = stringResource(
+    if (id == LlmModel.Precise) Res.string.model_skainet_precise_body else Res.string.model_skainet_fast_body,
+    name.removeSuffix(" Instruct"),
     size,
 )

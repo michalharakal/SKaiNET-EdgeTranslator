@@ -1,6 +1,7 @@
 package dev.nucleusframework.offlinetranslator.engine
 
 import dev.nucleusframework.offlinetranslator.domain.LlmBackend
+import dev.nucleusframework.offlinetranslator.domain.SkaiNetFamily
 import dev.nucleusframework.offlinetranslator.domain.TranslationEngine
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -14,6 +15,10 @@ object LlmRuntime {
 
     @Volatile
     var engine: TranslationEngine = TranslationEngine.LiteRt
+
+    /** Which family runs when [engine] is [TranslationEngine.SkaiNet] — set the same way as [engine]. */
+    @Volatile
+    var skainetFamily: SkaiNetFamily = SkaiNetFamily.LLAMA
 
     private val _accelerator = MutableStateFlow(LlmAccelerator.None)
     val accelerator: StateFlow<LlmAccelerator> = _accelerator.asStateFlow()

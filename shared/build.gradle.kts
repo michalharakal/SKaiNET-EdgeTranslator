@@ -62,6 +62,10 @@ kotlin {
             implementation(libs.kotlinx.coroutines.test)
         }
 
+        jvmTest.dependencies {
+            implementation(libs.ktor.client.mock)
+        }
+
         androidMain.dependencies {
             implementation(libs.kotlinx.coroutines.android)
             implementation(libs.ktor.client.okhttp)
@@ -70,6 +74,7 @@ kotlin {
             implementation(libs.androidx.activityCompose)
             implementation(project.dependencies.platform(libs.skainet.bom))
             implementation(libs.skainet.lang.core)
+            implementation(libs.skainet.backend.api)
             implementation(libs.skainet.backend.cpu)
             implementation(libs.skainet.backend.jni.cpu)
             implementation(libs.skainet.io.core)
@@ -78,6 +83,8 @@ kotlin {
             implementation(libs.skainet.transformers.core)
             implementation(libs.skainet.transformers.runtime.kllama)
             implementation(libs.skainet.transformers.inference.llama)
+            implementation(libs.skainet.transformers.runtime.kgemma)
+            implementation(libs.skainet.transformers.inference.gemma)
             implementation(libs.skainet.transformers.agent)
         }
 
@@ -107,6 +114,11 @@ kotlin {
             implementation(libs.skainet.transformers.core)
             implementation(libs.skainet.transformers.runtime.kllama)
             implementation(libs.skainet.transformers.inference.llama)
+            implementation(libs.skainet.transformers.runtime.kgemma)
+            implementation(libs.skainet.transformers.inference.gemma)
+            // Gemma4ChatModel's ChatModel-SPI surface — JVM-only, kgemma doesn't expose these transitively.
+            implementation(libs.skainet.transformers.providers)
+            implementation(libs.skainet.transformers.api)
             implementation(libs.skainet.transformers.agent)
         }
     }

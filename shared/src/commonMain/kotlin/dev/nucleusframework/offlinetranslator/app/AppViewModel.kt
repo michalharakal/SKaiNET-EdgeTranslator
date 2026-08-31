@@ -19,6 +19,7 @@ import dev.nucleusframework.offlinetranslator.domain.LlmBackend
 import dev.nucleusframework.offlinetranslator.domain.LlmKeepAlive
 import dev.nucleusframework.offlinetranslator.domain.LlmModel
 import dev.nucleusframework.offlinetranslator.domain.MODEL_IDLE_RELEASE_MS
+import dev.nucleusframework.offlinetranslator.domain.SkaiNetFamily
 import dev.nucleusframework.offlinetranslator.domain.TranslationEngine
 import dev.nucleusframework.offlinetranslator.domain.VoiceDownloadState
 import dev.nucleusframework.offlinetranslator.domain.allowedOn
@@ -39,6 +40,7 @@ import dev.nucleusframework.offlinetranslator.engine.PiperVoiceSpec
 import dev.nucleusframework.offlinetranslator.engine.PiperVoices
 import dev.nucleusframework.offlinetranslator.engine.SilentMic
 import dev.nucleusframework.offlinetranslator.engine.SilentTts
+import dev.nucleusframework.offlinetranslator.engine.SkaiNetCatalogModel
 import dev.nucleusframework.offlinetranslator.engine.SkaiNetModels
 import dev.nucleusframework.offlinetranslator.engine.TranslationMode
 import dev.nucleusframework.offlinetranslator.engine.TranslationRequest
@@ -87,6 +89,9 @@ class AppViewModel(
     private val modelOnDisk: (CatalogModel) -> Boolean = { it.isOnDisk() },
     private val modelOwnedByApp: (CatalogModel) -> Boolean = { it.ownedByApp() },
     private val deleteModelFiles: (CatalogModel) -> Unit = { it.removeFromDisk() },
+    private val skainetModelOnDisk: (SkaiNetCatalogModel) -> Boolean = { it.isOnDisk() },
+    private val skainetModelOwnedByApp: (SkaiNetCatalogModel) -> Boolean = { it.ownedByApp() },
+    private val skainetDeleteModelFiles: (SkaiNetCatalogModel) -> Unit = { it.removeFromDisk() },
     private val voicesOnDisk: () -> Set<String> = { PiperVoices.installed() },
     private val voiceOnDisk: (PiperVoiceSpec) -> Boolean = { it.isOnDisk() },
     private val deleteVoiceFiles: (String) -> Unit = { PiperVoices.of(it)?.removeFromDisk() },
@@ -118,7 +123,7 @@ class AppViewModel(
     val backStack: NavBackStack<AppKey> = NavBackStack(*restored.keys.toTypedArray())
 
     private var saveJob: Job? = null
-    private var downloadJob: Job? = null
+    private val downloadJobs = mutableMapOf<DownloadTarget, Job>()
     private var translateDebounceJob: Job? = null
     private var translateJob: Job? = null
     private var translating = false
@@ -163,22 +168,29 @@ class AppViewModel(
 
             AppIntent.CopyProofread -> copyProofread()
 
-            AppIntent.PauseDownload -> pauseDownload()
+            is AppIntent.PauseDownload -> if (intent.target is DownloadTarget.SkaiNet) pauseSkaiNetDownload(intent.target.family) else pauseDownload()
 
-            AppIntent.ResumeDownload -> startDownload()
+            is AppIntent.ResumeDownload -> if (intent.target is DownloadTarget.SkaiNet) startSkaiNetDownload(intent.target.family) else startDownload()
 
-            AppIntent.CancelDownload -> cancelDownload()
+            is AppIntent.CancelDownload -> if (intent.target is DownloadTarget.SkaiNet) cancelSkaiNetDownload(intent.target.family) else cancelDownload()
 
-            AppIntent.RetryDownload -> {
-                mutate { it.copy(download = DownloadState()) }
-                startDownload()
+            is AppIntent.RetryDownload -> {
+                val target = intent.target
+                if (target is DownloadTarget.SkaiNet) {
+                    mutate { it.copy(skainetDownloads = it.skainetDownloads + (target.family to DownloadState())) }
+                    startSkaiNetDownload(target.family)
+                } else {
+                    mutate { it.copy(download = DownloadState()) }
+                    startDownload()
+                }
             }
 
-            AppIntent.CompleteDownload -> completeDownload()
+            is AppIntent.CompleteDownload -> if (intent.target is DownloadTarget.SkaiNet) completeSkaiNetDownload(intent.target.family) else completeDownload()
 
             AppIntent.ConfirmDialog -> {
                 when (val action = (_state.value.dialog as? AppDialog.Confirm)?.action) {
                     is ConfirmAction.DeleteModel -> deleteModel(action.id)
+                    is ConfirmAction.DeleteSkaiNetModel -> deleteSkaiNetModel(action.family, action.id)
                     is ConfirmAction.DeleteVoice -> deleteVoice(action.lang)
                     ConfirmAction.ResetApp -> resetApp()
                     else -> mutate { confirmAction(it) }
@@ -242,6 +254,12 @@ class AppViewModel(
                 preloadIfKeptReady(activeModelPath(_state.value.data))
             }
 
+            is AppIntent.SetSkaiNetFamily -> {
+                LlmRuntime.skainetFamily = intent.family
+                persist(now = true)
+                preloadIfKeptReady(activeModelPath(_state.value.data))
+            }
+
             is AppIntent.SetLlmKeepAlive -> {
                 persist(now = true)
                 if (intent.mode == LlmKeepAlive.AlwaysOn) {
@@ -258,9 +276,25 @@ class AppViewModel(
                 if (modelOnDisk(catalog)) {
                     preloadIfKeptReady(catalog.destPath())
                 } else {
-                    downloadJob?.cancel()
-                    downloadJob = null
+                    downloadJobs.remove(DownloadTarget.Gemma)?.cancel()
                     startDownload()
+                }
+            }
+
+            is AppIntent.SelectSkaiNetModel -> {
+                persist(now = true)
+                val catalog = SkaiNetModels.of(intent.family, intent.id)
+                if (skainetModelOnDisk(catalog)) preloadIfKeptReady(catalog.destPath())
+            }
+
+            is AppIntent.DownloadSkaiNetModel -> {
+                persist(now = true)
+                val catalog = SkaiNetModels.of(intent.family, intent.id)
+                if (skainetModelOnDisk(catalog)) {
+                    preloadIfKeptReady(catalog.destPath())
+                } else {
+                    downloadJobs.remove(DownloadTarget.SkaiNet(intent.family))?.cancel()
+                    startSkaiNetDownload(intent.family)
                 }
             }
 
@@ -340,8 +374,10 @@ class AppViewModel(
         }
         val ram = hostRamBytes()
         data = coerceModelForRam(data, ram)
+        data = coerceSkaiNetModelForRam(data, ram)
         LlmRuntime.preference = data.settings.backend
         LlmRuntime.engine = data.settings.engine
+        LlmRuntime.skainetFamily = data.settings.skainetFamily
         // Startup override for testing/benchmarking — session-only, never persisted to settings.
         // EDGETRANSLATOR_ENGINE=skainet|litert (case-insensitive); unset or unrecognized is a no-op.
         Platform.getEnv("EDGETRANSLATOR_ENGINE")?.trim()?.lowercase()?.let { value ->
@@ -349,6 +385,10 @@ class AppViewModel(
                 "skainet" -> LlmRuntime.engine = TranslationEngine.SkaiNet
                 "litert", "litertlm", "litert-lm" -> LlmRuntime.engine = TranslationEngine.LiteRt
             }
+        }
+        // EDGETRANSLATOR_SKAINET_FAMILY=llama|gemma (case-insensitive); unset or unrecognized is a no-op.
+        Platform.getEnv("EDGETRANSLATOR_SKAINET_FAMILY")?.trim()?.lowercase()?.let { value ->
+            SkaiNetFamily.entries.firstOrNull { it.id == value }?.let { LlmRuntime.skainetFamily = it }
         }
         val catalog = GemmaModels.of(data.settings.selectedModel)
         if (modelOnDisk(catalog) && (!data.model.installed || data.model.id != catalog.id)) {
@@ -363,12 +403,47 @@ class AppViewModel(
                 totalBytes = catalog.bytes,
             )
         }
+        // Same auto-detect as the Gemma block above, for each SkaiNet family's independent
+        // catalog/pick — this is what makes a model file placed at SkaiNetModels' expected path
+        // (whether downloaded in-app or dropped there manually) show as installed without going
+        // through the download flow.
+        var skainetModels = data.skainetModels
+        var skainetSelection = data.settings.skainetSelection
+        for (family in SkaiNetFamily.entries) {
+            val catalog = SkaiNetModels.of(family, skainetSelection.getValue(family))
+            val info = skainetModels.getValue(family)
+            if (skainetModelOnDisk(catalog) && (!info.installed || info.id != catalog.id)) {
+                skainetModels = skainetModels + (family to catalog.toInfo(clock()))
+            } else if (!skainetModelOnDisk(catalog) && info.installed) {
+                val fallback = SkaiNetModels.catalogFor(family).firstOrNull { it.id != catalog.id && skainetModelOnDisk(it) }
+                if (fallback != null) {
+                    skainetSelection = skainetSelection + (family to fallback.id)
+                    skainetModels = skainetModels + (family to fallback.toInfo(clock()))
+                }
+            }
+        }
+        if (skainetModels != data.skainetModels || skainetSelection != data.settings.skainetSelection) {
+            data = data.copy(
+                settings = data.settings.copy(skainetSelection = skainetSelection),
+                skainetModels = skainetModels,
+            )
+            store.save(data.copy(history = emptyList()))
+        }
+        val skainetDownloads = SkaiNetFamily.entries.associateWith { family ->
+            val catalog = SkaiNetModels.of(family, skainetSelection.getValue(family))
+            if (skainetModelOnDisk(catalog)) {
+                DownloadState(phase = DownloadPhase.Done, bytesDownloaded = catalog.bytes, totalBytes = catalog.bytes)
+            } else {
+                DownloadState(totalBytes = catalog.bytes)
+            }
+        }
         return Restored(
             state = AppState(
                 data = data,
                 translation = translation,
                 voicePicks = voicePicks,
                 download = download,
+                skainetDownloads = skainetDownloads,
                 hostRamBytes = ram,
             ),
             keys = keys,
@@ -511,19 +586,45 @@ class AppViewModel(
 
         is AppIntent.SetTranslationEngine -> s.updateSettings { it.copy(engine = intent.engine) }
 
+        is AppIntent.SetSkaiNetFamily -> s.updateSettings { it.copy(skainetFamily = intent.family) }
+
         is AppIntent.SetLlmKeepAlive -> s.updateSettings { it.copy(keepAlive = intent.mode) }
 
-        is AppIntent.DownloadTick -> s.copy(
-            download = s.download.copy(
-                phase = DownloadPhase.Transfer,
-                bytesDownloaded = intent.bytes,
-                totalBytes = if (intent.totalBytes > 0) intent.totalBytes else s.download.totalBytes,
-                speedBps = intent.speedBps,
-                logs = intent.log?.let { (s.download.logs + it).takeLast(12) } ?: s.download.logs,
-            ),
-        )
+        is AppIntent.DownloadTick -> {
+            val target = intent.target
+            if (target is DownloadTarget.SkaiNet) {
+                val current = s.skainetDownloads.getValue(target.family)
+                s.copy(
+                    skainetDownloads = s.skainetDownloads + (target.family to current.copy(
+                        phase = DownloadPhase.Transfer,
+                        bytesDownloaded = intent.bytes,
+                        totalBytes = if (intent.totalBytes > 0) intent.totalBytes else current.totalBytes,
+                        speedBps = intent.speedBps,
+                        logs = intent.log?.let { (current.logs + it).takeLast(12) } ?: current.logs,
+                    )),
+                )
+            } else {
+                s.copy(
+                    download = s.download.copy(
+                        phase = DownloadPhase.Transfer,
+                        bytesDownloaded = intent.bytes,
+                        totalBytes = if (intent.totalBytes > 0) intent.totalBytes else s.download.totalBytes,
+                        speedBps = intent.speedBps,
+                        logs = intent.log?.let { (s.download.logs + it).takeLast(12) } ?: s.download.logs,
+                    ),
+                )
+            }
+        }
 
-        is AppIntent.DownloadPhase -> s.copy(download = s.download.copy(phase = intent.phase))
+        is AppIntent.DownloadPhase -> {
+            val target = intent.target
+            if (target is DownloadTarget.SkaiNet) {
+                val current = s.skainetDownloads.getValue(target.family)
+                s.copy(skainetDownloads = s.skainetDownloads + (target.family to current.copy(phase = intent.phase)))
+            } else {
+                s.copy(download = s.download.copy(phase = intent.phase))
+            }
+        }
 
         is AppIntent.SetHistoryQuery -> s.copy(historyQuery = intent.query)
 
@@ -548,6 +649,12 @@ class AppViewModel(
         is AppIntent.DownloadModel -> downloadModel(s, intent.id)
 
         is AppIntent.DeleteModel -> s.copy(dialog = AppDialog.Confirm(ConfirmAction.DeleteModel(intent.id)))
+
+        is AppIntent.SelectSkaiNetModel -> selectSkaiNetModel(s, intent.family, intent.id)
+
+        is AppIntent.DownloadSkaiNetModel -> downloadSkaiNetModel(s, intent.family, intent.id)
+
+        is AppIntent.DeleteSkaiNetModel -> s.copy(dialog = AppDialog.Confirm(ConfirmAction.DeleteSkaiNetModel(intent.family, intent.id)))
 
         is AppIntent.DeleteVoice -> s.copy(dialog = AppDialog.Confirm(ConfirmAction.DeleteVoice(intent.lang)))
 
@@ -610,11 +717,11 @@ class AppViewModel(
         AppIntent.Quit,
         AppIntent.CopyTranslation,
         AppIntent.CopyProofread,
-        AppIntent.PauseDownload,
-        AppIntent.ResumeDownload,
-        AppIntent.CancelDownload,
-        AppIntent.RetryDownload,
-        AppIntent.CompleteDownload,
+        is AppIntent.PauseDownload,
+        is AppIntent.ResumeDownload,
+        is AppIntent.CancelDownload,
+        is AppIntent.RetryDownload,
+        is AppIntent.CompleteDownload,
         AppIntent.ToggleMic,
         AppIntent.CancelMic,
         AppIntent.TranslateImage,
@@ -635,6 +742,8 @@ class AppViewModel(
             AppIntent.StartInstall -> LlmModel.Fast.allowedOn(ram)
             is AppIntent.SelectModel -> intent.id.allowedOn(ram)
             is AppIntent.DownloadModel -> intent.id.allowedOn(ram) || modelOnDisk(GemmaModels.of(intent.id))
+            is AppIntent.SelectSkaiNetModel -> intent.id.allowedOn(ram)
+            is AppIntent.DownloadSkaiNetModel -> intent.id.allowedOn(ram) || skainetModelOnDisk(SkaiNetModels.of(intent.family, intent.id))
             else -> true
         }
     }
@@ -654,6 +763,28 @@ class AppViewModel(
             settings = data.settings.copy(selectedModel = fallback),
             model = if (modelOnDisk(catalog)) catalog.toInfo(clock()) else data.model,
         )
+    }
+
+    /** Same fallback as [coerceModelForRam], for each SkaiNet family's independent catalog/pick. */
+    private fun coerceSkaiNetModelForRam(data: AppData, ram: Long): AppData {
+        var next = data
+        for (family in SkaiNetFamily.entries) {
+            val id = next.settings.skainetSelection.getValue(family)
+            if (id.allowedOn(ram)) continue
+            if (next.installed && skainetModelOnDisk(SkaiNetModels.of(family, id))) continue
+            val fallback = LlmModel.Fast
+            if (fallback == id) continue
+            val catalog = SkaiNetModels.of(family, fallback)
+            next = next.copy(
+                settings = next.settings.copy(skainetSelection = next.settings.skainetSelection + (family to fallback)),
+                skainetModels = if (skainetModelOnDisk(catalog)) {
+                    next.skainetModels + (family to catalog.toInfo(clock()))
+                } else {
+                    next.skainetModels
+                },
+            )
+        }
+        return next
     }
 
     private fun selectModel(s: AppState, id: LlmModel): AppState {
@@ -693,6 +824,50 @@ class AppViewModel(
         if (s.data.settings.selectedModel == id && (s.download.running || s.download.paused)) return s
         return s.updateSettings { it.copy(selectedModel = id) }
             .copy(download = DownloadState(totalBytes = catalog.bytes))
+    }
+
+    private fun selectSkaiNetModel(s: AppState, family: SkaiNetFamily, id: LlmModel): AppState {
+        if (!id.allowedOn(s.hostRamBytes)) return s
+        val catalog = SkaiNetModels.of(family, id)
+        val onDisk = skainetModelOnDisk(catalog)
+        if (!onDisk && s.data.installed) return s
+        val selected = s.data.settings.skainetSelection.getValue(family)
+        val download = s.skainetDownloads.getValue(family)
+        if (selected == id && (onDisk || download.running || !s.data.installed)) {
+            val info = s.data.skainetModels.getValue(family)
+            return if (onDisk && (!info.installed || info.id != id)) {
+                s.copy(
+                    data = s.data.copy(skainetModels = s.data.skainetModels + (family to catalog.toInfo(clock()))),
+                    skainetDownloads = s.skainetDownloads + (family to DownloadState(
+                        phase = DownloadPhase.Done,
+                        bytesDownloaded = catalog.bytes,
+                        totalBytes = catalog.bytes,
+                    )),
+                )
+            } else {
+                s
+            }
+        }
+        val next = s.updateSettings { it.copy(skainetSelection = it.skainetSelection + (family to id)) }
+        return if (onDisk) {
+            next.copy(
+                data = next.data.copy(skainetModels = next.data.skainetModels + (family to catalog.toInfo(clock()))),
+                skainetDownloads = next.skainetDownloads + (family to DownloadState(phase = DownloadPhase.Done, bytesDownloaded = catalog.bytes, totalBytes = catalog.bytes)),
+            )
+        } else {
+            next.copy(skainetDownloads = next.skainetDownloads + (family to DownloadState(totalBytes = catalog.bytes)))
+        }
+    }
+
+    private fun downloadSkaiNetModel(s: AppState, family: SkaiNetFamily, id: LlmModel): AppState {
+        val catalog = SkaiNetModels.of(family, id)
+        if (!id.allowedOn(s.hostRamBytes) && !skainetModelOnDisk(catalog)) return s
+        if (skainetModelOnDisk(catalog)) return selectSkaiNetModel(s, family, id)
+        val selected = s.data.settings.skainetSelection.getValue(family)
+        val download = s.skainetDownloads.getValue(family)
+        if (selected == id && (download.running || download.paused)) return s
+        return s.updateSettings { it.copy(skainetSelection = it.skainetSelection + (family to id)) }
+            .copy(skainetDownloads = s.skainetDownloads + (family to DownloadState(totalBytes = catalog.bytes)))
     }
 
     private fun chooseLanguage(s: AppState, code: String, role: LangRole): AppState {
@@ -760,6 +935,8 @@ class AppViewModel(
 
             is ConfirmAction.DeleteModel -> s.copy(dialog = AppDialog.Hidden)
 
+            is ConfirmAction.DeleteSkaiNetModel -> s.copy(dialog = AppDialog.Hidden)
+
             is ConfirmAction.DeleteVoice -> s.copy(dialog = AppDialog.Hidden)
 
             ConfirmAction.ResetApp -> s.copy(dialog = AppDialog.Hidden)
@@ -768,8 +945,8 @@ class AppViewModel(
 
     private fun resetApp() {
         saveJob?.cancel()
-        downloadJob?.cancel()
-        downloadJob = null
+        downloadJobs.values.forEach { it.cancel() }
+        downloadJobs.clear()
         voiceJob?.cancel()
         voiceJob = null
         cancelTranslateJobs()
@@ -784,8 +961,13 @@ class AppViewModel(
         unloadEngine()
         LlmRuntime.preference = LlmBackend.Auto
         LlmRuntime.engine = TranslationEngine.LiteRt
+        LlmRuntime.skainetFamily = SkaiNetFamily.LLAMA
         GemmaModels.all.forEach { catalog ->
             if (modelOwnedByApp(catalog)) deleteModelFiles(catalog)
+            else Platform.delete(catalog.partialPath())
+        }
+        SkaiNetModels.all.forEach { catalog ->
+            if (skainetModelOwnedByApp(catalog)) skainetDeleteModelFiles(catalog)
             else Platform.delete(catalog.partialPath())
         }
         PiperVoices.all().forEach { deleteVoiceFiles(it.id) }
@@ -805,8 +987,7 @@ class AppViewModel(
         val catalog = GemmaModels.of(id)
         val selected = _state.value.data.settings.selectedModel
         if (_state.value.download.running && selected == id) {
-            downloadJob?.cancel()
-            downloadJob = null
+            downloadJobs.remove(DownloadTarget.Gemma)?.cancel()
         }
         if (_state.value.data.model.id == id) unloadEngine()
         deleteModelFiles(catalog)
@@ -832,6 +1013,47 @@ class AppViewModel(
                 dialog = AppDialog.Hidden,
                 data = current.data.copy(settings = nextSettings, model = nextModel),
                 download = nextDownload,
+            )
+        }
+        persist(now = true)
+        preloadIfKeptReady(activeModelPath(_state.value.data))
+    }
+
+    private fun deleteSkaiNetModel(family: SkaiNetFamily, id: LlmModel) {
+        val catalog = SkaiNetModels.of(family, id)
+        val selected = _state.value.data.settings.skainetSelection.getValue(family)
+        if (_state.value.skainetDownloads.getValue(family).running && selected == id) {
+            downloadJobs.remove(DownloadTarget.SkaiNet(family))?.cancel()
+        }
+        if (_state.value.data.skainetModels.getValue(family).id == id) unloadEngine()
+        skainetDeleteModelFiles(catalog)
+        val fallback = SkaiNetModels.catalogFor(family).firstOrNull { it.id != id && skainetModelOnDisk(it) }
+        mutate { current ->
+            val currentInfo = current.data.skainetModels.getValue(family)
+            val currentSelected = current.data.settings.skainetSelection.getValue(family)
+            val active = currentInfo.id == id || currentSelected == id
+            val nextModel = when {
+                fallback != null && active -> fallback.toInfo(clock())
+                active -> currentInfo.copy(installed = false, installedAt = null, sha256 = "", path = "")
+                else -> currentInfo
+            }
+            val nextSelection = if (nextModel.installed && nextModel.id != currentSelected) {
+                current.data.settings.skainetSelection + (family to nextModel.id)
+            } else {
+                current.data.settings.skainetSelection
+            }
+            val nextDownload = if (currentSelected == id) {
+                DownloadState(totalBytes = catalog.bytes)
+            } else {
+                current.skainetDownloads.getValue(family)
+            }
+            current.copy(
+                dialog = AppDialog.Hidden,
+                data = current.data.copy(
+                    settings = current.data.settings.copy(skainetSelection = nextSelection),
+                    skainetModels = current.data.skainetModels + (family to nextModel),
+                ),
+                skainetDownloads = current.skainetDownloads + (family to nextDownload),
             )
         }
         persist(now = true)
@@ -880,10 +1102,11 @@ class AppViewModel(
     }
 
     private fun startDownload() {
-        if (downloadJob?.isActive == true) return
+        val target = DownloadTarget.Gemma
+        if (downloadJobs[target]?.isActive == true) return
         val catalog = GemmaModels.of(_state.value.data.settings.selectedModel)
         if (!catalog.id.allowedOn(_state.value.hostRamBytes) && !modelOnDisk(catalog)) return
-        downloadJob = scope.launch {
+        downloadJobs[target] = scope.launch {
             mutate {
                 it.copy(
                     download = it.download.copy(
@@ -913,10 +1136,10 @@ class AppViewModel(
                 }
                 return@launch
             }
-            onIntent(AppIntent.DownloadPhase(DownloadPhase.DiskCheck))
+            onIntent(AppIntent.DownloadPhase(target, DownloadPhase.DiskCheck))
             appendLog(DownloadLog.DiskOk)
             if (!isActive) return@launch
-            onIntent(AppIntent.DownloadPhase(DownloadPhase.Connect))
+            onIntent(AppIntent.DownloadPhase(target, DownloadPhase.Connect))
             appendLog(DownloadLog.Mirror(catalog.repo))
             try {
                 val downloaded = downloader.download(
@@ -925,20 +1148,20 @@ class AppViewModel(
                     expectedSha256 = catalog.sha256,
                     expectedBytes = catalog.bytes,
                     onConnect = {
-                        onIntent(AppIntent.DownloadPhase(DownloadPhase.Connect))
+                        onIntent(AppIntent.DownloadPhase(target, DownloadPhase.Connect))
                     },
                     onVerify = {
-                        onIntent(AppIntent.DownloadPhase(DownloadPhase.Verify))
+                        onIntent(AppIntent.DownloadPhase(target, DownloadPhase.Verify))
                     },
                     onProgress = { bytes, total, speed, log ->
-                        onIntent(AppIntent.DownloadTick(bytes, speed, log, total))
+                        onIntent(AppIntent.DownloadTick(target, bytes, speed, log, total))
                     },
                 )
                 if (!isActive) return@launch
                 if (downloaded.createdByApp) {
                     withContext(ioDispatcher) { catalog.markOwned() }
                 }
-                onIntent(AppIntent.DownloadPhase(DownloadPhase.Index))
+                onIntent(AppIntent.DownloadPhase(target, DownloadPhase.Index))
                 if (keepModelReady()) {
                     try {
                         translator.preload(downloaded.path)
@@ -968,14 +1191,12 @@ class AppViewModel(
     }
 
     private fun pauseDownload() {
-        downloadJob?.cancel()
-        downloadJob = null
+        downloadJobs.remove(DownloadTarget.Gemma)?.cancel()
         mutate { it.copy(download = it.download.copy(paused = true)) }
     }
 
     private fun cancelDownload() {
-        downloadJob?.cancel()
-        downloadJob = null
+        downloadJobs.remove(DownloadTarget.Gemma)?.cancel()
         val catalog = GemmaModels.of(_state.value.data.settings.selectedModel)
         scope.launch { withContext(ioDispatcher) { Platform.delete(catalog.partialPath()) } }
         mutate { s ->
@@ -1000,8 +1221,7 @@ class AppViewModel(
     }
 
     private fun finishDownload(downloaded: DownloadedModel, catalog: CatalogModel, readyLog: DownloadLog) {
-        downloadJob?.cancel()
-        downloadJob = null
+        downloadJobs.remove(DownloadTarget.Gemma)?.cancel()
         val now = clock()
         mutate { s ->
             s.copy(
@@ -1024,16 +1244,174 @@ class AppViewModel(
         persist(now = true)
     }
 
+    // ---- SKaiNet catalog: same download machinery as the Gemma functions above, generalized by
+    // family (data.skainetModels / skainetDownloads are keyed on SkaiNetFamily) instead of
+    // duplicated per family — see "Wire Gemma into EdgeTranslator's SkaiNet engine" plan.
+
+    private fun startSkaiNetDownload(family: SkaiNetFamily = _state.value.data.settings.skainetFamily) {
+        val target = DownloadTarget.SkaiNet(family)
+        if (downloadJobs[target]?.isActive == true) return
+        val catalog = SkaiNetModels.of(family, _state.value.data.settings.skainetSelection.getValue(family))
+        if (!catalog.id.allowedOn(_state.value.hostRamBytes) && !skainetModelOnDisk(catalog)) return
+        downloadJobs[target] = scope.launch {
+            mutate {
+                it.copy(
+                    skainetDownloads = it.skainetDownloads + (family to it.skainetDownloads.getValue(family).copy(
+                        paused = false,
+                        error = null,
+                        phase = DownloadPhase.DiskCheck,
+                        totalBytes = catalog.bytes,
+                    )),
+                )
+            }
+            val (dest, already, free) = withContext(ioDispatcher) {
+                val destPath = catalog.destPath()
+                val dir = catalog.modelDir()
+                Platform.mkdir(dir)
+                val have = Platform.fileSize(destPath).let { if (it > 0) it else Platform.fileSize(catalog.partialPath()) }
+                Triple(destPath, have, Platform.freeSpace(dir))
+            }
+            val needed = (catalog.bytes - already).coerceAtLeast(0) + GemmaModel.DISK_BUFFER_BYTES
+            if (free in 1 until needed) {
+                mutate {
+                    it.copy(
+                        skainetDownloads = it.skainetDownloads + (family to it.skainetDownloads.getValue(family).copy(
+                            phase = DownloadPhase.Failed,
+                            error = DownloadError.DiskFull(free),
+                        )),
+                    )
+                }
+                return@launch
+            }
+            onIntent(AppIntent.DownloadPhase(target, DownloadPhase.DiskCheck))
+            appendLog(DownloadLog.DiskOk)
+            if (!isActive) return@launch
+            onIntent(AppIntent.DownloadPhase(target, DownloadPhase.Connect))
+            appendLog(DownloadLog.Mirror(catalog.repo))
+            try {
+                val downloaded = downloader.download(
+                    destPath = dest,
+                    url = catalog.url,
+                    expectedSha256 = catalog.sha256,
+                    expectedBytes = catalog.bytes,
+                    onConnect = {
+                        onIntent(AppIntent.DownloadPhase(target, DownloadPhase.Connect))
+                    },
+                    onVerify = {
+                        onIntent(AppIntent.DownloadPhase(target, DownloadPhase.Verify))
+                    },
+                    onProgress = { bytes, total, speed, log ->
+                        onIntent(AppIntent.DownloadTick(target, bytes, speed, log, total))
+                    },
+                )
+                if (!isActive) return@launch
+                if (downloaded.createdByApp) {
+                    withContext(ioDispatcher) { catalog.markOwned() }
+                }
+                onIntent(AppIntent.DownloadPhase(target, DownloadPhase.Index))
+                if (keepModelReady()) {
+                    try {
+                        translator.preload(downloaded.path)
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                    }
+                }
+                finishSkaiNetDownload(downloaded, catalog, DownloadLog.Ready)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                val error = (e as? DownloadFailedException)?.error
+                    ?: (e.cause as? DownloadFailedException)?.error
+                    ?: DownloadError.Interrupted
+                mutate {
+                    it.copy(
+                        skainetDownloads = it.skainetDownloads + (family to it.skainetDownloads.getValue(family).copy(
+                            phase = DownloadPhase.Failed,
+                            error = error,
+                            paused = false,
+                        )),
+                    )
+                }
+            }
+        }
+    }
+
+    private fun pauseSkaiNetDownload(family: SkaiNetFamily) {
+        downloadJobs.remove(DownloadTarget.SkaiNet(family))?.cancel()
+        mutate { it.copy(skainetDownloads = it.skainetDownloads + (family to it.skainetDownloads.getValue(family).copy(paused = true))) }
+    }
+
+    private fun cancelSkaiNetDownload(family: SkaiNetFamily) {
+        downloadJobs.remove(DownloadTarget.SkaiNet(family))?.cancel()
+        val catalog = SkaiNetModels.of(family, _state.value.data.settings.skainetSelection.getValue(family))
+        scope.launch { withContext(ioDispatcher) { Platform.delete(catalog.partialPath()) } }
+        mutate { s ->
+            val info = s.data.skainetModels.getValue(family)
+            val fallback = info.id.takeIf { s.data.installed && info.installed }
+            val next = if (fallback != null) {
+                s.updateSettings { it.copy(skainetSelection = it.skainetSelection + (family to fallback)) }
+            } else {
+                s
+            }
+            val download = if (fallback != null) {
+                val installed = SkaiNetModels.of(family, fallback)
+                DownloadState(phase = DownloadPhase.Done, bytesDownloaded = installed.bytes, totalBytes = installed.bytes)
+            } else {
+                DownloadState(phase = DownloadPhase.Cancelled, totalBytes = catalog.bytes)
+            }
+            next.copy(skainetDownloads = next.skainetDownloads + (family to download))
+        }
+        persist(now = true)
+    }
+
+    private fun completeSkaiNetDownload(family: SkaiNetFamily) {
+        val catalog = SkaiNetModels.of(family, _state.value.data.settings.skainetSelection.getValue(family))
+        val dest = catalog.destPath()
+        val bytes = Platform.fileSize(dest).takeIf { it > 0 } ?: catalog.bytes
+        finishSkaiNetDownload(DownloadedModel(dest, catalog.sha256, bytes), catalog, readyLog = DownloadLog.Ready)
+    }
+
+    private fun finishSkaiNetDownload(downloaded: DownloadedModel, catalog: SkaiNetCatalogModel, readyLog: DownloadLog) {
+        val family = catalog.family
+        downloadJobs.remove(DownloadTarget.SkaiNet(family))?.cancel()
+        val now = clock()
+        mutate { s ->
+            val currentDownload = s.skainetDownloads.getValue(family)
+            s.copy(
+                skainetDownloads = s.skainetDownloads + (family to currentDownload.copy(
+                    phase = DownloadPhase.Done,
+                    bytesDownloaded = downloaded.bytes,
+                    totalBytes = downloaded.bytes,
+                    paused = false,
+                    logs = (currentDownload.logs + readyLog).takeLast(12),
+                )),
+                data = s.data.copy(
+                    skainetModels = s.data.skainetModels + (family to catalog.toInfo(now).copy(
+                        sha256 = downloaded.sha256.take(8),
+                        path = downloaded.path,
+                        expectedBytes = downloaded.bytes,
+                    )),
+                ),
+            )
+        }
+        persist(now = true)
+    }
+
     private fun keepModelReady(): Boolean = _state.value.data.settings.keepAlive == LlmKeepAlive.AlwaysOn
 
     /**
-     * `data.model.path` is always the LiteRT-LM catalog path (see [GemmaModels]) — SKaiNet has its
-     * own, separate GGUF catalog ([SkaiNetModels]) with no download UI wired up yet. Blank (not the
-     * wrong file) when the SKaiNet GGUF isn't on disk, so [Translator.translate] cleanly reports
-     * [TranslationResult.Unavailable] instead of failing GGUF-magic validation against a litertlm file.
+     * `data.model.path` is the LiteRT-LM catalog path ([GemmaModels]); SKaiNet has its own, separate
+     * GGUF catalog ([SkaiNetModels]) with its own pick ([UserSettings.skainetSelectedModel]) and its
+     * own [ModelDownloader] flow. Blank (not the wrong file) when the SKaiNet GGUF isn't on disk, so
+     * [Translator.translate] cleanly reports [TranslationResult.Unavailable] instead of failing
+     * GGUF-magic validation against a litertlm file.
      */
     private fun activeModelPath(data: AppData): String = when (LlmRuntime.engine) {
-        TranslationEngine.SkaiNet -> SkaiNetModels.of(data.settings.selectedModel).takeIf { it.isOnDisk() }?.destPath().orEmpty()
+        TranslationEngine.SkaiNet -> {
+            val family = LlmRuntime.skainetFamily
+            SkaiNetModels.of(family, data.settings.skainetSelection.getValue(family)).takeIf { skainetModelOnDisk(it) }?.destPath().orEmpty()
+        }
         TranslationEngine.LiteRt -> data.model.path
     }
 
@@ -1392,7 +1770,7 @@ class AppViewModel(
             mutate { it.copy(message = AppMessage.MicUnavailable) }
             return
         }
-        if (!_state.value.data.model.installed || _state.value.translation.imageBusy) return
+        if (!_state.value.activeModelInstalled || _state.value.translation.imageBusy) return
         recordJob?.cancel()
         // The pane goes up before mic.start(): opening the line is slow cold (OS permission
         // prompt, device wake-up), and a button that does nothing for a second reads as broken.
@@ -1466,7 +1844,7 @@ class AppViewModel(
 
     private fun translateImage(bytes: ByteArray? = null) {
         val s = _state.value
-        if (!s.data.model.installed || s.translation.micPhase != MicPhase.Idle || s.translation.imageBusy) return
+        if (!s.activeModelInstalled || s.translation.micPhase != MicPhase.Idle || s.translation.imageBusy) return
         recordJob?.cancel()
         recordJob = scope.launch {
             val image: ByteArray? = if (bytes != null) {

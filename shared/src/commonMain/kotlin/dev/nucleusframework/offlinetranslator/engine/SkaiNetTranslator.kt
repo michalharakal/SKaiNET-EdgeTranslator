@@ -1,5 +1,6 @@
 package dev.nucleusframework.offlinetranslator.engine
 
+import dev.nucleusframework.offlinetranslator.domain.SkaiNetFamily
 import dev.nucleusframework.offlinetranslator.platform.Platform
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
@@ -13,11 +14,13 @@ import kotlinx.coroutines.sync.withLock
 class SkaiNetTranslator(
     private val exists: (String) -> Boolean = { Platform.exists(it) },
     private val now: () -> Long = { Platform.now() },
+    private val family: () -> SkaiNetFamily = { LlmRuntime.skainetFamily },
 ) : Translator {
     private val sessionFactory: () -> SkaiNetLlm = { SkaiNetLlm() }
     private val mutex = Mutex()
     private var session: SkaiNetLlm? = null
     private var loadedPath: String? = null
+    private var loadedFamily: SkaiNetFamily? = null
 
     override suspend fun translate(request: TranslationRequest): TranslationResult {
         val path = request.modelPath
@@ -64,20 +67,24 @@ class SkaiNetTranslator(
         session?.close()
         session = null
         loadedPath = null
+        loadedFamily = null
         LlmRuntime.report(LlmAccelerator.None)
     }
 
     private fun ensureLoaded(path: String): SkaiNetLlm {
+        val wantFamily = family()
         val current = session
-        if (current != null && loadedPath == path) return current
+        if (current != null && loadedPath == path && loadedFamily == wantFamily) return current
         current?.close()
         session = null
         loadedPath = null
+        loadedFamily = null
         val next = sessionFactory()
         try {
-            val used = next.load(path)
+            val used = next.load(path, wantFamily)
             session = next
             loadedPath = path
+            loadedFamily = wantFamily
             LlmRuntime.report(used)
             return next
         } catch (t: Throwable) {

@@ -7,10 +7,14 @@ import dev.nucleusframework.offlinetranslator.domain.LlmBackend
 import dev.nucleusframework.offlinetranslator.domain.LlmKeepAlive
 import dev.nucleusframework.offlinetranslator.domain.LlmModel
 import dev.nucleusframework.offlinetranslator.domain.ModelInfo
+import dev.nucleusframework.offlinetranslator.domain.SkaiNetFamily
 import dev.nucleusframework.offlinetranslator.domain.ThemeMode
+import dev.nucleusframework.offlinetranslator.domain.TranslationEngine
 import dev.nucleusframework.offlinetranslator.domain.UiLanguage
 import dev.nucleusframework.offlinetranslator.domain.UserSettings
+import dev.nucleusframework.offlinetranslator.domain.defaultSkainetModels
 import dev.nucleusframework.offlinetranslator.engine.GemmaModels
+import dev.nucleusframework.offlinetranslator.engine.SkaiNetModels
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 
@@ -35,7 +39,9 @@ internal fun encodeSnapshot(data: AppData): String = buildString {
     appendLine("shortcut=${b64(s.shortcut)}")
     appendLine("modelDir=${b64(s.modelDir)}")
     appendLine("selectedModel=${s.selectedModel.name}")
+    appendLine("skainetFamily=${s.skainetFamily.id}")
     appendLine("backend=${s.backend.name}")
+    appendLine("engine=${s.engine.name}")
     appendLine("keepAlive=${s.keepAlive.name}")
     appendLine("langNames=${s.langNames.name}")
     appendLine("selectedVoices=${s.selectedVoices.entries.joinToString(",") { "${it.key}=${it.value}" }}")
@@ -46,6 +52,17 @@ internal fun encodeSnapshot(data: AppData): String = buildString {
     appendLine("model.sha=${m.sha256}")
     appendLine("model.path=${b64(m.path)}")
     appendLine("model.checked=${m.lastChecked ?: 0}")
+    for (family in SkaiNetFamily.entries) {
+        val tier = s.skainetSelection.getValue(family)
+        val sm = data.skainetModels.getValue(family)
+        appendLine("skainetSelection.${family.id}=${tier.name}")
+        appendLine("skainetModel.${family.id}.id=${sm.id.name}")
+        appendLine("skainetModel.${family.id}.installed=${sm.installed}")
+        appendLine("skainetModel.${family.id}.at=${sm.installedAt ?: 0}")
+        appendLine("skainetModel.${family.id}.sha=${sm.sha256}")
+        appendLine("skainetModel.${family.id}.path=${b64(sm.path)}")
+        appendLine("skainetModel.${family.id}.checked=${sm.lastChecked ?: 0}")
+    }
     appendLine("sourceLang=${data.lastSourceLang}")
     appendLine("targetLang=${data.lastTargetLang}")
 }
@@ -73,7 +90,10 @@ internal fun decodeSnapshot(text: String): AppData {
     var shortcut = "⌘⌃ T"
     var modelDir = ""
     var selectedModel = LlmModel.Fast
+    var skainetFamily = SkaiNetFamily.LLAMA
+    var skainetSelection = SkaiNetFamily.entries.associateWith { LlmModel.Fast }.toMutableMap()
     var backend = LlmBackend.Auto
+    var engine = TranslationEngine.LiteRt
     var keepAlive = LlmKeepAlive.OnDemand
     var langNames = LangNameStyle.System
     var selectedVoices = emptyMap<String, String>()
@@ -82,12 +102,22 @@ internal fun decodeSnapshot(text: String): AppData {
     var modelAt = 0L
     var modelSha = ""
     var modelChecked = 0L
+    data class SkaiNetModelFields(
+        var id: LlmModel = LlmModel.Fast,
+        var installed: Boolean = false,
+        var at: Long = 0L,
+        var sha: String = "",
+        var checked: Long = 0L,
+    )
+    val skainetModelFields = SkaiNetFamily.entries.associateWith { SkaiNetModelFields() }
     var lastSourceLang = AUTO_LANG
     var lastTargetLang = "en"
 
     text.lineSequence().forEach { raw ->
         val line = raw.trim()
         if (line.isEmpty() || line == VERSION) return@forEach
+        val skainetSelectionMatch = SkaiNetFamily.entries.firstOrNull { line.startsWith("skainetSelection.${it.id}=") }
+        val skainetModelFamily = SkaiNetFamily.entries.firstOrNull { line.startsWith("skainetModel.${it.id}.") }
         when {
             line.startsWith("installed=") -> installed = line.substringAfter("=").toBoolean()
 
@@ -119,9 +149,23 @@ internal fun decodeSnapshot(text: String): AppData {
                 selectedModel =
                     runCatching { LlmModel.valueOf(line.substringAfter("=")) }.getOrDefault(LlmModel.Fast)
 
+            line.startsWith("skainetFamily=") -> {
+                val raw2 = line.substringAfter("=")
+                skainetFamily = SkaiNetFamily.entries.firstOrNull { it.id == raw2 } ?: SkaiNetFamily.LLAMA
+            }
+
+            skainetSelectionMatch != null -> {
+                val tier = runCatching { LlmModel.valueOf(line.substringAfter("=")) }.getOrDefault(LlmModel.Fast)
+                skainetSelection[skainetSelectionMatch] = tier
+            }
+
             line.startsWith("backend=") ->
                 backend =
                     runCatching { LlmBackend.valueOf(line.substringAfter("=")) }.getOrDefault(LlmBackend.Auto)
+
+            line.startsWith("engine=") ->
+                engine =
+                    runCatching { TranslationEngine.valueOf(line.substringAfter("=")) }.getOrDefault(TranslationEngine.LiteRt)
 
             line.startsWith("keepAlive=") ->
                 keepAlive =
@@ -150,6 +194,20 @@ internal fun decodeSnapshot(text: String): AppData {
 
             line.startsWith("model.checked=") -> modelChecked = line.substringAfter("=").toLongOrNull() ?: 0L
 
+            skainetModelFamily != null -> {
+                val fields = skainetModelFields.getValue(skainetModelFamily)
+                val prefix = "skainetModel.${skainetModelFamily.id}."
+                when {
+                    line.startsWith("${prefix}id=") ->
+                        fields.id = runCatching { LlmModel.valueOf(line.substringAfter("=")) }.getOrDefault(LlmModel.Fast)
+                    line.startsWith("${prefix}installed=") -> fields.installed = line.substringAfter("=").toBoolean()
+                    line.startsWith("${prefix}at=") -> fields.at = line.substringAfter("=").toLongOrNull() ?: 0L
+                    line.startsWith("${prefix}sha=") -> fields.sha = line.substringAfter("=")
+                    line.startsWith("${prefix}path=") -> Unit
+                    line.startsWith("${prefix}checked=") -> fields.checked = line.substringAfter("=").toLongOrNull() ?: 0L
+                }
+            }
+
             line.startsWith("sourceLang=") -> lastSourceLang = line.substringAfter("=").ifBlank { AUTO_LANG }
 
             line.startsWith("targetLang=") -> lastTargetLang = line.substringAfter("=").ifBlank { "en" }
@@ -172,7 +230,10 @@ internal fun decodeSnapshot(text: String): AppData {
             shortcut = shortcut,
             modelDir = modelDir,
             selectedModel = selectedModel,
+            skainetFamily = skainetFamily,
+            skainetSelection = skainetSelection,
             backend = backend,
+            engine = engine,
             keepAlive = keepAlive,
             langNames = langNames,
             selectedVoices = selectedVoices,
@@ -190,6 +251,22 @@ internal fun decodeSnapshot(text: String): AppData {
                 name = catalog.name,
                 quantization = catalog.quantization,
                 expectedBytes = catalog.bytes,
+            )
+        },
+        skainetModels = defaultSkainetModels().mapValues { (family, default) ->
+            val fields = skainetModelFields.getValue(family)
+            val catalog = SkaiNetModels.of(family, fields.id)
+            ModelInfo(
+                id = fields.id,
+                installed = fields.installed,
+                installedAt = fields.at.takeIf { it > 0 },
+                sha256 = fields.sha,
+                path = if (fields.installed) catalog.destPath() else "",
+                lastChecked = fields.checked.takeIf { it > 0 },
+                name = if (fields.installed) catalog.name else default.name,
+                version = default.version,
+                quantization = if (fields.installed) catalog.quantization else default.quantization,
+                expectedBytes = if (fields.installed) catalog.bytes else default.expectedBytes,
             )
         },
     )

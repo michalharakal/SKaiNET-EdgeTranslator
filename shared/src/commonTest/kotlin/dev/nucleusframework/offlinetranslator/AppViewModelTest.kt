@@ -5,6 +5,7 @@ import dev.nucleusframework.offlinetranslator.app.AppIntent
 import dev.nucleusframework.offlinetranslator.app.AppKey
 import dev.nucleusframework.offlinetranslator.app.AppViewModel
 import dev.nucleusframework.offlinetranslator.app.ConfirmAction
+import dev.nucleusframework.offlinetranslator.app.DownloadTarget
 import dev.nucleusframework.offlinetranslator.app.visibleHistory
 import dev.nucleusframework.offlinetranslator.data.MemoryHistoryStore
 import dev.nucleusframework.offlinetranslator.data.MemoryStore
@@ -24,9 +25,12 @@ import dev.nucleusframework.offlinetranslator.domain.LlmKeepAlive
 import dev.nucleusframework.offlinetranslator.domain.LlmModel
 import dev.nucleusframework.offlinetranslator.domain.MODEL_IDLE_RELEASE_MS
 import dev.nucleusframework.offlinetranslator.domain.ModelInfo
+import dev.nucleusframework.offlinetranslator.domain.SkaiNetFamily
+import dev.nucleusframework.offlinetranslator.domain.TranslationEngine
 import dev.nucleusframework.offlinetranslator.domain.UiLanguage
 import dev.nucleusframework.offlinetranslator.domain.paragraphCount
 import dev.nucleusframework.offlinetranslator.engine.CatalogModel
+import dev.nucleusframework.offlinetranslator.engine.SkaiNetCatalogModel
 import dev.nucleusframework.offlinetranslator.engine.GemmaModel
 import dev.nucleusframework.offlinetranslator.engine.DownloadedModel
 import dev.nucleusframework.offlinetranslator.engine.IdleDownloader
@@ -84,6 +88,9 @@ class AppViewModelTest {
         modelOnDisk: (CatalogModel) -> Boolean = { false },
         modelOwnedByApp: (CatalogModel) -> Boolean = { false },
         deleteModelFiles: (CatalogModel) -> Unit = {},
+        skainetModelOnDisk: (SkaiNetCatalogModel) -> Boolean = { false },
+        skainetModelOwnedByApp: (SkaiNetCatalogModel) -> Boolean = { false },
+        skainetDeleteModelFiles: (SkaiNetCatalogModel) -> Unit = {},
         voicesOnDisk: () -> Set<String> = { emptySet() },
         voiceOnDisk: (dev.nucleusframework.offlinetranslator.engine.PiperVoiceSpec) -> Boolean = { false },
         deleteVoiceFiles: (String) -> Unit = {},
@@ -106,6 +113,9 @@ class AppViewModelTest {
         modelOnDisk = modelOnDisk,
         modelOwnedByApp = modelOwnedByApp,
         deleteModelFiles = deleteModelFiles,
+        skainetModelOnDisk = skainetModelOnDisk,
+        skainetModelOwnedByApp = skainetModelOwnedByApp,
+        skainetDeleteModelFiles = skainetDeleteModelFiles,
         voicesOnDisk = voicesOnDisk,
         voiceOnDisk = voiceOnDisk,
         deleteVoiceFiles = deleteVoiceFiles,
@@ -131,7 +141,7 @@ class AppViewModelTest {
         assertEquals(AppKey.Welcome, vm.backStack.last())
         vm.onIntent(AppIntent.StartInstall)
         assertEquals(AppKey.Download, vm.backStack.last())
-        vm.onIntent(AppIntent.CompleteDownload)
+        vm.onIntent(AppIntent.CompleteDownload(DownloadTarget.Gemma))
         assertTrue(vm.state.value.data.model.installed)
         vm.onIntent(AppIntent.OpenApp)
         assertEquals(AppKey.Translate, vm.backStack.last())
@@ -307,7 +317,7 @@ class AppViewModelTest {
     fun completeDownloadUsesSelectedModel() {
         val vm = vm()
         vm.onIntent(AppIntent.SelectModel(LlmModel.Precise))
-        vm.onIntent(AppIntent.CompleteDownload)
+        vm.onIntent(AppIntent.CompleteDownload(DownloadTarget.Gemma))
         val model = vm.state.value.data.model
         assertTrue(model.installed)
         assertEquals(LlmModel.Precise, model.id)
@@ -319,7 +329,7 @@ class AppViewModelTest {
         val store = MemoryStore(seedData())
         val removed = mutableListOf<LlmModel>()
         val vm = vm(store = store, deleteModelFiles = { removed += it.id })
-        vm.onIntent(AppIntent.CompleteDownload)
+        vm.onIntent(AppIntent.CompleteDownload(DownloadTarget.Gemma))
         assertTrue(vm.state.value.data.model.installed)
         vm.onIntent(AppIntent.DeleteModel(LlmModel.Fast))
         val dialog = assertIs<AppDialog.Confirm>(vm.state.value.dialog)
@@ -339,7 +349,7 @@ class AppViewModelTest {
             modelOnDisk = { it.id in onDisk },
             deleteModelFiles = { onDisk.remove(it.id) },
         )
-        vm.onIntent(AppIntent.CompleteDownload)
+        vm.onIntent(AppIntent.CompleteDownload(DownloadTarget.Gemma))
         vm.onIntent(AppIntent.DeleteModel(LlmModel.Fast))
         vm.onIntent(AppIntent.ConfirmDialog)
         assertTrue(vm.state.value.data.model.installed)
@@ -401,17 +411,41 @@ class AppViewModelTest {
         )
         vm.onIntent(AppIntent.DownloadModel(LlmModel.Precise))
         assertTrue(vm.state.value.download.running)
-        vm.onIntent(AppIntent.PauseDownload)
+        vm.onIntent(AppIntent.PauseDownload(DownloadTarget.Gemma))
         assertTrue(vm.state.value.download.paused)
         assertFalse(vm.state.value.download.running)
-        vm.onIntent(AppIntent.ResumeDownload)
+        vm.onIntent(AppIntent.ResumeDownload(DownloadTarget.Gemma))
         assertTrue(vm.state.value.download.running)
-        vm.onIntent(AppIntent.CancelDownload)
+        vm.onIntent(AppIntent.CancelDownload(DownloadTarget.Gemma))
         assertEquals(DownloadPhase.Done, vm.state.value.download.phase)
         assertFalse(vm.state.value.download.running)
         assertFalse(vm.state.value.download.paused)
         assertEquals(LlmModel.Fast, vm.state.value.data.model.id)
         assertEquals(LlmModel.Fast, vm.state.value.data.settings.selectedModel)
+    }
+
+    @Test
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    fun gemmaAndSkaiNetDownloadsRunConcurrentlyWithoutCancellingEachOther() {
+        val vm = vm(
+            store = MemoryStore(seedData().copy(installed = true)),
+            dispatcher = UnconfinedTestDispatcher(),
+            modelOnDisk = { false },
+            skainetModelOnDisk = { false },
+        )
+        vm.onIntent(AppIntent.DownloadModel(LlmModel.Fast))
+        assertTrue(vm.state.value.download.running)
+        vm.onIntent(AppIntent.DownloadSkaiNetModel(SkaiNetFamily.LLAMA, LlmModel.Fast))
+        assertTrue(vm.state.value.download.running)
+        assertTrue(vm.state.value.skainetDownloads.getValue(SkaiNetFamily.LLAMA).running)
+        vm.onIntent(AppIntent.DownloadSkaiNetModel(SkaiNetFamily.GEMMA, LlmModel.Fast))
+        assertTrue(vm.state.value.download.running)
+        assertTrue(vm.state.value.skainetDownloads.getValue(SkaiNetFamily.LLAMA).running)
+        assertTrue(vm.state.value.skainetDownloads.getValue(SkaiNetFamily.GEMMA).running)
+        vm.onIntent(AppIntent.PauseDownload(DownloadTarget.SkaiNet(SkaiNetFamily.LLAMA)))
+        assertTrue(vm.state.value.download.running)
+        assertFalse(vm.state.value.skainetDownloads.getValue(SkaiNetFamily.LLAMA).running)
+        assertTrue(vm.state.value.skainetDownloads.getValue(SkaiNetFamily.GEMMA).running)
     }
 
     @Test
@@ -645,6 +679,8 @@ class AppViewModelTest {
             dispatcher = Dispatchers.Default,
             clock = { 1L },
             forceOnboarding = true,
+            modelOnDisk = { false },
+            skainetModelOnDisk = { false },
         )
         assertEquals(AppKey.Welcome, vm.backStack.last())
         assertFalse(vm.state.value.data.installed)
@@ -673,6 +709,50 @@ class AppViewModelTest {
         assertEquals(original.lastTargetLang, restored.lastTargetLang)
         assertEquals(LlmModel.Precise, restored.model.id)
         assertEquals("Gemma 4 E4B IT", restored.model.name)
+    }
+
+    @Test
+    fun engineAndSkaiNetModelSurviveRoundTripAndDefaultForOlderSnapshots() {
+        val original = seedData().copy(
+            installed = true,
+            settings = seedData().settings.copy(
+                engine = TranslationEngine.SkaiNet,
+                skainetFamily = SkaiNetFamily.GEMMA,
+                skainetSelection = mapOf(SkaiNetFamily.LLAMA to LlmModel.Fast, SkaiNetFamily.GEMMA to LlmModel.Precise),
+            ),
+            skainetModels = mapOf(
+                SkaiNetFamily.LLAMA to seedData().skainetModels.getValue(SkaiNetFamily.LLAMA),
+                SkaiNetFamily.GEMMA to seedData().skainetModels.getValue(SkaiNetFamily.GEMMA)
+                    .copy(id = LlmModel.Precise, installed = true, sha256 = "abcd1234"),
+            ),
+        )
+        val restored = decodeSnapshot(encodeSnapshot(original))
+        assertEquals(TranslationEngine.SkaiNet, restored.settings.engine)
+        assertEquals(SkaiNetFamily.GEMMA, restored.settings.skainetFamily)
+        assertEquals(LlmModel.Fast, restored.settings.skainetSelection.getValue(SkaiNetFamily.LLAMA))
+        assertEquals(LlmModel.Precise, restored.settings.skainetSelection.getValue(SkaiNetFamily.GEMMA))
+        val gemmaInfo = restored.skainetModels.getValue(SkaiNetFamily.GEMMA)
+        assertEquals(LlmModel.Precise, gemmaInfo.id)
+        assertTrue(gemmaInfo.installed)
+        assertEquals("abcd1234", gemmaInfo.sha256)
+        assertFalse(restored.skainetModels.getValue(SkaiNetFamily.LLAMA).installed)
+
+        // A snapshot written before these keys existed (the pre-SkaiNet-engine app) must decode to
+        // the pre-existing defaults — LiteRt, Llama, Fast, not installed — not crash or silently
+        // pick SkaiNet/Gemma.
+        val legacy = encodeSnapshot(original).lineSequence()
+            .filterNot {
+                it.startsWith("engine=") || it.startsWith("skainetFamily=") ||
+                    it.startsWith("skainetSelection.") || it.startsWith("skainetModel.")
+            }
+            .joinToString("\n")
+        val legacyRestored = decodeSnapshot(legacy)
+        assertEquals(TranslationEngine.LiteRt, legacyRestored.settings.engine)
+        assertEquals(SkaiNetFamily.LLAMA, legacyRestored.settings.skainetFamily)
+        assertEquals(LlmModel.Fast, legacyRestored.settings.skainetSelection.getValue(SkaiNetFamily.LLAMA))
+        assertEquals(LlmModel.Fast, legacyRestored.settings.skainetSelection.getValue(SkaiNetFamily.GEMMA))
+        assertFalse(legacyRestored.skainetModels.getValue(SkaiNetFamily.LLAMA).installed)
+        assertFalse(legacyRestored.skainetModels.getValue(SkaiNetFamily.GEMMA).installed)
     }
 
     @Test
@@ -1153,7 +1233,7 @@ class AppViewModelTest {
     fun voicesStepFollowsModelWhenTtsAvailable() {
         val vm = vm(tts = FakeTts())
         vm.onIntent(AppIntent.StartInstall)
-        vm.onIntent(AppIntent.CompleteDownload)
+        vm.onIntent(AppIntent.CompleteDownload(DownloadTarget.Gemma))
         vm.onIntent(AppIntent.GoToStep(dev.nucleusframework.offlinetranslator.app.InstallStep.Voices))
         assertEquals(AppKey.Voices, vm.backStack.last())
         assertTrue(vm.state.value.voicePicks.any { PiperVoices.covers(it, "en") })
@@ -1252,7 +1332,7 @@ class AppViewModelTest {
             deleteVoiceFiles = { removedVoices += it },
             wipeDownloadDirs = { wipedDirs = true },
         )
-        vm.onIntent(AppIntent.CompleteDownload)
+        vm.onIntent(AppIntent.CompleteDownload(DownloadTarget.Gemma))
         vm.onIntent(AppIntent.OpenApp)
         vm.onIntent(AppIntent.SetUiLanguage(UiLanguage.En))
         vm.onIntent(AppIntent.SetLangNameStyle(LangNameStyle.Native))
@@ -1284,7 +1364,7 @@ class AppViewModelTest {
             modelOwnedByApp = { false },
             deleteModelFiles = { removedModels += it.id },
         )
-        vm.onIntent(AppIntent.CompleteDownload)
+        vm.onIntent(AppIntent.CompleteDownload(DownloadTarget.Gemma))
         vm.onIntent(AppIntent.OpenApp)
         vm.onIntent(AppIntent.ResetApp)
         vm.onIntent(AppIntent.ConfirmDialog)

@@ -24,6 +24,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.nucleusframework.offlinetranslator.app.AppIntent
+import dev.nucleusframework.offlinetranslator.app.DownloadTarget
 import dev.nucleusframework.offlinetranslator.domain.DownloadPhase
 import dev.nucleusframework.offlinetranslator.domain.DownloadState
 import dev.nucleusframework.offlinetranslator.domain.UiLanguage
@@ -47,6 +48,7 @@ fun DownloadPanel(
     download: DownloadState,
     ui: UiLanguage,
     onIntent: (AppIntent) -> Unit,
+    target: DownloadTarget,
     modifier: Modifier = Modifier,
     title: String? = null,
 ) {
@@ -109,9 +111,9 @@ fun DownloadPanel(
                             onClick = {
                                 onIntent(
                                     if (phase == DownloadPhase.Cancelled || phase == DownloadPhase.Failed) {
-                                        AppIntent.RetryDownload
+                                        AppIntent.RetryDownload(target)
                                     } else {
-                                        AppIntent.ResumeDownload
+                                        AppIntent.ResumeDownload(target)
                                     },
                                 )
                             },
@@ -120,11 +122,11 @@ fun DownloadPanel(
 
                     else -> FilledPill(
                         stringResource(Res.string.action_pause),
-                        onClick = { onIntent(AppIntent.PauseDownload) },
+                        onClick = { onIntent(AppIntent.PauseDownload(target)) },
                         icon = Icons.Outlined.Pause,
                     )
                 }
-                OutlinedPill(stringResource(Res.string.action_cancel), onClick = { onIntent(AppIntent.CancelDownload) })
+                OutlinedPill(stringResource(Res.string.action_cancel), onClick = { onIntent(AppIntent.CancelDownload(target)) })
                 Spacer(Modifier.weight(1f))
                 Text(
                     download.error?.text(ui) ?: stringResource(Res.string.download_auto_resume),

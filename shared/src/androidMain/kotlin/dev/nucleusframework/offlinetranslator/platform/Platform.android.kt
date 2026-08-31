@@ -82,6 +82,11 @@ internal actual object Platform {
 
     actual fun writeAppend(path: String, bytes: ByteArray, offset: Int, length: Int) = filekitWriteAppend(path, bytes, offset, length)
 
+    actual fun writeAt(path: String, offset: Long, bytes: ByteArray, srcOffset: Int, length: Int) =
+        randomAccessWriteAt(path, offset, bytes, srcOffset, length)
+
+    actual fun preallocate(path: String, size: Long) = randomAccessPreallocate(path, size)
+
     actual fun truncate(path: String) = filekitTruncate(path)
 
     actual fun now(): Long = System.currentTimeMillis()
@@ -96,6 +101,18 @@ internal actual object Platform {
     // Apps launched by the launcher have no shell env — this only sees anything when set by the
     // process that started the JVM (e.g. an Android Studio run config, `run-as`, instrumentation).
     actual fun getEnv(name: String): String? = System.getenv(name)
+}
+
+internal fun randomAccessWriteAt(path: String, offset: Long, bytes: ByteArray, srcOffset: Int, length: Int) {
+    java.io.RandomAccessFile(path, "rw").use { f ->
+        f.seek(offset)
+        f.write(bytes, srcOffset, length)
+    }
+}
+
+internal fun randomAccessPreallocate(path: String, size: Long) {
+    File(path).parentFile?.mkdirs()
+    java.io.RandomAccessFile(path, "rw").use { it.setLength(size) }
 }
 
 internal suspend fun filekitSha256(path: String): String? {

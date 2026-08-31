@@ -7,6 +7,7 @@ import dev.nucleusframework.offlinetranslator.domain.LangRole
 import dev.nucleusframework.offlinetranslator.domain.LlmBackend
 import dev.nucleusframework.offlinetranslator.domain.LlmKeepAlive
 import dev.nucleusframework.offlinetranslator.domain.LlmModel
+import dev.nucleusframework.offlinetranslator.domain.SkaiNetFamily
 import dev.nucleusframework.offlinetranslator.domain.ThemeMode
 import dev.nucleusframework.offlinetranslator.domain.TranslationEngine
 import dev.nucleusframework.offlinetranslator.domain.UiLanguage
@@ -53,15 +54,22 @@ sealed interface AppIntent {
     data class SetLangNameStyle(val style: LangNameStyle) : AppIntent
     data class SetLlmBackend(val backend: LlmBackend) : AppIntent
     data class SetTranslationEngine(val engine: TranslationEngine) : AppIntent
+    data class SetSkaiNetFamily(val family: SkaiNetFamily) : AppIntent
     data class SetLlmKeepAlive(val mode: LlmKeepAlive) : AppIntent
 
-    data object PauseDownload : AppIntent
-    data object ResumeDownload : AppIntent
-    data object CancelDownload : AppIntent
-    data object RetryDownload : AppIntent
-    data object CompleteDownload : AppIntent
-    data class DownloadTick(val bytes: Long, val speedBps: Long, val log: DownloadLog? = null, val totalBytes: Long = 0) : AppIntent
-    data class DownloadPhase(val phase: dev.nucleusframework.offlinetranslator.domain.DownloadPhase) : AppIntent
+    data class PauseDownload(val target: DownloadTarget) : AppIntent
+    data class ResumeDownload(val target: DownloadTarget) : AppIntent
+    data class CancelDownload(val target: DownloadTarget) : AppIntent
+    data class RetryDownload(val target: DownloadTarget) : AppIntent
+    data class CompleteDownload(val target: DownloadTarget) : AppIntent
+    data class DownloadTick(
+        val target: DownloadTarget,
+        val bytes: Long,
+        val speedBps: Long,
+        val log: DownloadLog? = null,
+        val totalBytes: Long = 0,
+    ) : AppIntent
+    data class DownloadPhase(val target: DownloadTarget, val phase: dev.nucleusframework.offlinetranslator.domain.DownloadPhase) : AppIntent
 
     data class SetHistoryQuery(val query: String) : AppIntent
     data class SetHistoryFilter(val filter: HistoryFilter) : AppIntent
@@ -73,6 +81,9 @@ sealed interface AppIntent {
     data class SelectModel(val id: LlmModel) : AppIntent
     data class DownloadModel(val id: LlmModel) : AppIntent
     data class DeleteModel(val id: LlmModel) : AppIntent
+    data class SelectSkaiNetModel(val family: SkaiNetFamily, val id: LlmModel) : AppIntent
+    data class DownloadSkaiNetModel(val family: SkaiNetFamily, val id: LlmModel) : AppIntent
+    data class DeleteSkaiNetModel(val family: SkaiNetFamily, val id: LlmModel) : AppIntent
     data class SetTheme(val mode: ThemeMode) : AppIntent
     data class SetAirplane(val on: Boolean) : AppIntent
     data class SetKeepHistory(val on: Boolean) : AppIntent
