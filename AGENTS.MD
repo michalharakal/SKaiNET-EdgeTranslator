@@ -43,11 +43,12 @@ end-to-end in the actual desktop app (not just headless):
 **local-only `mavenLocal()` builds**, not on Maven Central — carrying the #991/#992/#993 fixes
 pending a real upstream release. `settings.gradle.kts` has an opt-in composite build
 (`-PuseLocalSkainet=true` / `-PuseLocalSkainetTransformers=true`) as an alternative to the
-mavenLocal republish cycle — **the transformers half doesn't reliably substitute** (see inline
-comment in that file); the core-only half does. On a fresh machine, `~/.m2/repository` won't have
-these interim builds — either re-publish from the SKaiNET clone below (`publishToMavenLocal
+mavenLocal republish cycle — **now fully working for both halves** (fixed 2026-08-15, see the
+Gemma 4 handover section below for the root cause and fix — it was a project-name-vs-artifactId
+mismatch, not a Gradle limitation). On a fresh machine, `~/.m2/repository` won't have these
+interim builds — either re-publish from the SKaiNET clone below (`publishToMavenLocal
 -PsignAllPublications=false` from `:skainet-backends:skainet-backend-cpu`) or use the composite
-build for iteration instead.
+build for iteration instead (recommended now that both halves substitute reliably).
 
 ### Where things live (this machine's paths — reclone as siblings of `SKaiNET-EdgeTranslator` on
 ### a new machine, composite build assumes this exact layout)
@@ -59,43 +60,98 @@ build for iteration instead.
   (pushed, no PR yet — it's a findings/diagnostics branch, not a finished fix),
   `github.com/SKaiNET-developers/SKaiNET-transformers`.
 
-### In progress, NOT resolved: getting real Gemma 4 E2B IT running via SKaiNET
+### ROOT CAUSE FOUND (2026-08-15, later same session): v_norm was disabled
 
-Separate from the (working, merged) Llama integration above. Full plan:
-`~/.claude/plans/create-plan-to-get-golden-wreath.md` (5 phases: re-validate → close parity gap →
-add reusable facade → wire into app → deploy). **Currently stuck partway through Phase 0**
-(the go/no-go re-validation) — do not skip ahead to Phase 2/3 until Phase 0 concludes.
+**The catastrophic immediate-`<eos>`/gibberish decode collapse below is fixed.** One line in
+`SKaiNET-transformers/llm-inference/gemma/.../GemmaNetworkDef.kt`: `vNormNoScale = false` →
+`true`. `MultiHeadAttention.kt` already had a correct, tested V-normalization code path
+(`Gemma4RMSNorm(head_dim, with_scale=False)`, matching real `transformers` source exactly), but
+it was disabled for Gemma 4 based on a comment about `gemma3` (a different architecture
+generation) not needing it — that finding got incorrectly generalized to `gemma4`, which *does*
+need it. Filed as `SKaiNET-transformers#325` / PR `#326`, verified via a direct
+forward-hook comparison against the real `google/gemma-4-E2B-it` HF checkpoint (not just the
+GGUF) — see `GEMMA4_E2B_SKAINET_FINDINGS.md` Run 6 for the full trail.
+
+**Not a 100% fix**: `Gemma4E2BToolCallSmokeTest` still fails — decode is now coherent English
+instead of catastrophically broken, but degrades into a repetition loop after a few tokens
+rather than reaching the exact trained `<|tool_call>...` format. Candidate follow-up areas
+(not yet checked with the same rigor as v_norm): `qkNorm` epsilon/unit-offset exactness, `gelu`
+formula (HF uses `gelu_pytorch_tanh` specifically), final-logit-softcapping interaction now that
+logit magnitudes are much more reasonable. Whether to keep chasing this or treat it as an
+accepted quantization/precision boundary is an open call — the investigation's primary
+objective (decode no longer catastrophically broken) is met.
+
+### Older, now-resolved framing kept below for the full investigation history
+
+Separate from the (working, merged) Llama integration above. Full plan (this exact file may not
+exist on a new machine — it's a Claude Code plan file, not part of either repo):
+`~/.claude/plans/we-are-going-to-spicy-newt.md` (composite-build fix → decode investigation →
+reusable facade → wire into app; the original 5-phase plan referenced in earlier handover notes,
+`create-plan-to-get-golden-wreath.md`, was on a different machine and is not recoverable — this
+supersedes it). **Still stuck in the decode-investigation phase** — do not skip ahead to the
+facade/app-wiring phases until decode is verified correct against the real checkpoint.
+
+**Composite build now fully fixed** (was broken before, `sk.ainet.transformers:*` silently
+resolved as external mavenLocal artifacts instead of local project sources): both a nested
+double-`includeBuild` issue and, more importantly, a project-name-vs-artifactId mismatch (Gradle's
+automatic composite substitution matches on Gradle project path, not the `POM_ARTIFACT_ID`
+`vanniktech.mavenPublish` actually publishes under — SKaiNET's own project paths happen to equal
+their artifact names, SKaiNET-transformers' don't). Fixed with explicit `dependencySubstitution`
+rules in `SKaiNET-EdgeTranslator/settings.gradle.kts` (keyed off each module's real
+`POM_ARTIFACT_ID`) plus a `gradle.parent == null` guard in `SKaiNET-transformers/settings.gradle.kts`'s
+own nested include. Verified via `:shared:dependencies` showing real `project :SKaiNET-transformers:...`
+substitution, and a full `:shared:compileKotlinJvm` against the composite build.
 
 Full evidence trail: `SKaiNET-transformers/GEMMA4_E2B_SKAINET_FINDINGS.md` (on the
-`investigate/gemma4-e2b-decode-parity` branch). Read it in full before continuing — summary:
+`investigate/gemma4-e2b-decode-parity` branch, pushed). Read it in full before continuing —
+summary of where things actually stand as of 2026-08-15:
 
 - A complete GGUF quantized-loading subsystem for Gemma 4 already exists upstream
   (`Gemma4Ingestion`/`Gemma4WeightLoader`/`GemmaMemSegConverter`/`Gemma4ChatTemplate` in
   `llm-runtime/kgemma` + `llm-inference/gemma`), just not wired into a reusable library facade —
   the premise that Gemma-on-SKaiNET needs FP32-SafeTensors-only (~20GB) was **wrong**.
-- Re-ran the previously-`@Ignore`d `Gemma4E2BToolCallSmokeTest` against the now-fixed SKaiNET
-  core: no crash (positive signal), but still fails — empty model output.
-- A follow-up raw-decode diagnostic (`Gemma4RawDecodeDiagnosticTest`, bypasses `ChatSession`
-  entirely) showed: prefill logits are finite/sane (not numeric corruption), but with a
-  **correctly** chat-template-formatted prompt and **no tool definition**, the model's greedy
-  top-1 prediction at step 0 is immediate `<eos>`.
-- **Exact next step, not yet run**: `Gemma4RawDecodeDiagnosticTest` has already been updated
-  (compiles clean) to include the same `calculator` tool definition the actually-failing smoke
-  test uses — controlling for the hypothesis that the model behaves differently (real content vs.
-  immediate stop) only when a tool is offered. Run it:
-  ```
-  cd SKaiNET-transformers
-  export GEMMA4_E2B_MODEL_PATH=/Users/A9973957/.lmstudio/models/lmstudio-community/gemma-4-E2B-it-GGUF/gemma-4-E2B-it-Q4_K_M.gguf
-  ./gradlew :llm-runtime:kgemma:jvmTest --tests '*Gemma4RawDecodeDiagnosticTest*' \
-      -PkgemmaTestMaxHeap=24g -PkgemmaTestMaxDirect=32g -PuseLocalSkainet=true --rerun
-  ```
-  (On a new machine without that exact GGUF cached: any `google/gemma-4-e2b-it` Q4_K_M GGUF
-  works, e.g. `lmstudio-community/gemma-4-E2B-it-GGUF` on Hugging Face — update the env var path.
-  ~3GB download, ~24GB heap / ~2GB direct memory to load — the findings doc has full sizing
-  notes.)
-- The findings doc spells out what each possible outcome means and the next lever to pull for
-  each (a `ChatSession`-layer bug vs. a real DSL-forward-pass issue, with `GEMMA4_NO_KV_SHARING=1`
-  as the next diagnostic lever for the latter).
+- Isolated a clean minimal repro of the bug: `<bos><|turn>model\n` (4 tokens, no `ChatSession`,
+  no tool, no chat-template complexity) alone reproduces immediate top-1 `<eos>` — confirmed
+  independent of `ChatSession`'s prompt construction (which was itself found and fixed to be a
+  faithful match) and independent of tool-calling specifically.
+- **Two real, verified bugs found and fixed** (both filed + PR'd upstream under `michalharakal`,
+  neither turned out to be the (sole) cause of this symptom, both kept as real fixes regardless):
+  - `SKaiNET-transformers#321`/PR #322 — `partial_rotary_factor` was hardcoded to `0.25` for any
+    Gemma GGUF; the real checkpoint's own `rope.dimension_count` field says it should be `1.0`.
+  - `SKaiNET-transformers#323`/PR #324 — a dead-code (confirmed via testing, unused by the live
+    DSL path) shared-KV-cache clobbering bug in the legacy `Gemma4AttentionBackend`.
+- **Ran the real `google/gemma-4-E2B-it` checkpoint via `transformers` for ground truth** (this
+  machine's `pip` was pinned to a stale mirror capping at `transformers==4.46.3`, no `gemma4`
+  support at all — `uv pip install transformers` resolved the real current PyPI,
+  `transformers==5.15.0`, which does support it). Confirmed our top-1 (`<eos>`) genuinely diverges
+  from the real model's top-1 (`"Here"`) on the identical input — not a coincidentally-correct
+  response to a degenerate prompt.
+- **Ruled out quantization as the cause** — a `GEMMA4_QUANT=fp32` toggle
+  (`Gemma4ReferenceParityDiagnostic`) bypassing all packed-quant kernels produces bit-identical
+  output to `NATIVE_OPTIMIZED`. This is a real algorithmic divergence, not a kernel/quantization
+  artifact.
+- **Layer-by-layer hidden-state diff against the real model**: chased what first looked like a
+  clean single-layer bug (blk.34, the final layer, ~4× smaller post-scale magnitude than the
+  reference) but ruled out every layer-34-specific hypothesis checked (KV-share owner assignment,
+  PLE tensor-slice bounds, `layer_output_scale` weight loading — all confirmed correct via direct
+  checks). Computing *pre-scale* magnitude ratios instead of post-scale RMS shows the real
+  divergence starts much earlier (~blk.3–13, already 12–37% off) and compounds across depth —
+  reframes this from "one broken operation" to "small numerical differences accumulating across
+  35 layers, finally large enough to flip a close top-1 decision at the output."
+- **Next step, not yet done**: instrument both the Kotlin and reference forward passes to dump
+  intermediate values *inside* one early block (e.g. blk.3) — post-attention, post-FFN, and
+  post-PLE separately, not just the block's final output — to find which of those three
+  sub-computations introduces the first measurable divergence. Prime suspects, in order: `gelu`
+  exactness (HF uses `gelu_pytorch_tanh` specifically), RMSNorm epsilon/order, `qkNorm`-before-RoPE
+  ordering. The findings doc has the full reasoning and all ruled-out hypotheses in detail.
+
+To resume: reclone all three repos as siblings per "Where things live" above (this handover's own
+composite-build fix is already pushed on each repo's stated branch), download a
+`gemma-4-E2B-it-Q4_K_M.gguf` (e.g. `lmstudio-community/gemma-4-E2B-it-GGUF` on Hugging Face,
+~3.4GB), set `GEMMA4_E2B_MODEL_PATH`, and pick up at the findings doc's "Recommended next step."
+For the ground-truth comparison specifically, use `uv` (not plain `pip`) to install
+`transformers`/`torch` if `pip`'s resolved version doesn't recognize `gemma4` — see Run 5 in the
+findings doc for the exact working recipe.
 
 ---
 
