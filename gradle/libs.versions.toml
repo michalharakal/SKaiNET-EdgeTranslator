@@ -24,17 +24,15 @@ nucleus = "2.4.3"
 # good desktop JNI. https://github.com/google-ai-edge/LiteRT-LM/issues/3230
 litertlm = "0.14.0"
 # SKaiNET engine + transformers LLM layer.
-# skainet 0.51.0 is a real Maven Central release (the engine-adoption arc: WeightForm-driven
-# loading, MAPPED residency zero-copy weight serving, per-step forwardScope, BitNet support).
-# skainetTransformers 0.51.0-SNAPSHOT is LOCAL-ONLY (publishToMavenLocal from
-# SKaiNET-transformers `feat/0.51-migration`, not on Maven Central yet — that branch's PR
-# SKaiNET-transformers#353 is still open) carrying the matching engine-loader migration:
-# every family loader rewritten onto skainet's StreamingGgufParametersLoader/WeightForm, MAPPED
-# default, the new BitNet family. Revert to a Central release once #353 merges and ships.
+# Both are official Maven Central releases (sk.ainet:skainet-bom 0.53.0 and
+# sk.ainet.transformers:skainet-transformers-bom 0.53.0), kept in lockstep: the transformers
+# family loaders are built on the engine's StreamingGgufParametersLoader/WeightForm surface
+# (MAPPED residency, zero-copy weight serving, per-step forwardScope, BitNet family), so the
+# two versions must match.
 # Re-run docs/PERF-LOGBOOK.md's benchmark before bumping further (SKaiNET-transformers docs:
 # "nothing here is stable").
-skainet = "0.51.0"
-skainetTransformers = "0.51.0-SNAPSHOT"
+skainet = "0.53.0"
+skainetTransformers = "0.53.0"
 filekit = "0.15.0"
 structured-coroutines = "1.1.0"
 piper-jni = "1.4.2"
@@ -111,7 +109,7 @@ skainet-transformers-core = { module = "sk.ainet.transformers:skainet-transforme
 skainet-transformers-runtime-kllama = { module = "sk.ainet.transformers:skainet-transformers-runtime-kllama" }
 skainet-transformers-inference-llama = { module = "sk.ainet.transformers:skainet-transformers-inference-llama" }
 # Gemma family — GGUF-quantized via Gemma4ChatModel.fromGguf (JVM) / Gemma4Ingestion (Android),
-# engine 0.51.1-SNAPSHOT+ (SKaiNET#1217/#1218 fixed the dense-FP32-over-mapped-storage matmul
+# engine 0.51.1+ (SKaiNET#1217/#1218 fixed the dense-FP32-over-mapped-storage matmul
 # gap Gemma's per-layer-embedding projection hit).
 skainet-transformers-runtime-kgemma = { module = "sk.ainet.transformers:skainet-transformers-runtime-kgemma" }
 skainet-transformers-inference-gemma = { module = "sk.ainet.transformers:skainet-transformers-inference-gemma" }

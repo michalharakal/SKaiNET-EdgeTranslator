@@ -68,6 +68,17 @@ subprojects {
         add("ktlintRuleset", ktlintComposeRules)
     }
 
+    // The published sk.ainet.transformers:skainet-transformers-runtime-kgemma-jvm:0.53.0 POM
+    // declares a runtime dependency on `SKaiNET-transformers.llm-runtime:kgemma3n-jvm:unspecified`
+    // — an un-published project() coordinate leaked by upstream's publishing (the Android variant
+    // is clean). kgemma only uses it from its own CLI Main.kt, which this app never touches, so
+    // drop the group everywhere (it has to be excluded on every resolving project, not just
+    // :shared, because :desktopApp resolves its own runtimeClasspath through the same POM).
+    // Remove once upstream ships a fixed POM.
+    configurations.configureEach {
+        exclude(group = "SKaiNET-transformers.llm-runtime")
+    }
+
     tasks.withType<Detekt>().configureEach {
         jvmTarget.set("17")
         exclude("**/build/**")
