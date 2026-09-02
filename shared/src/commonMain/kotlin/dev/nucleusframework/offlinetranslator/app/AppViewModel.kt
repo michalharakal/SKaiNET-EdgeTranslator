@@ -260,6 +260,12 @@ class AppViewModel(
                 preloadIfKeptReady(activeModelPath(_state.value.data))
             }
 
+            is AppIntent.SetMtp -> {
+                LlmRuntime.mtp = intent.on
+                persist(now = true)
+                preloadIfKeptReady(_state.value.data.model.path)
+            }
+
             is AppIntent.SetLlmKeepAlive -> {
                 persist(now = true)
                 if (intent.mode == LlmKeepAlive.AlwaysOn) {
@@ -390,6 +396,7 @@ class AppViewModel(
         Platform.getEnv("EDGETRANSLATOR_SKAINET_FAMILY")?.trim()?.lowercase()?.let { value ->
             SkaiNetFamily.entries.firstOrNull { it.id == value }?.let { LlmRuntime.skainetFamily = it }
         }
+        LlmRuntime.mtp = data.settings.mtp
         val catalog = GemmaModels.of(data.settings.selectedModel)
         if (modelOnDisk(catalog) && (!data.model.installed || data.model.id != catalog.id)) {
             data = data.copy(model = catalog.toInfo(clock()))
@@ -589,6 +596,8 @@ class AppViewModel(
         is AppIntent.SetSkaiNetFamily -> s.updateSettings { it.copy(skainetFamily = intent.family) }
 
         is AppIntent.SetLlmKeepAlive -> s.updateSettings { it.copy(keepAlive = intent.mode) }
+
+        is AppIntent.SetMtp -> s.updateSettings { it.copy(mtp = intent.on) }
 
         is AppIntent.DownloadTick -> {
             val target = intent.target
@@ -962,6 +971,7 @@ class AppViewModel(
         LlmRuntime.preference = LlmBackend.Auto
         LlmRuntime.engine = TranslationEngine.LiteRt
         LlmRuntime.skainetFamily = SkaiNetFamily.LLAMA
+        LlmRuntime.mtp = false
         GemmaModels.all.forEach { catalog ->
             if (modelOwnedByApp(catalog)) deleteModelFiles(catalog)
             else Platform.delete(catalog.partialPath())

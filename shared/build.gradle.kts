@@ -171,7 +171,7 @@ tasks.matching {
 composeStabilityAnalyzer {
     stabilityConfigurationFiles.add(stabilityConfig)
     traceAll {
-        enabled.set(true)
+        enabled.set(false)
         threshold.set(2)
         variants.set(listOf("debug"))
     }

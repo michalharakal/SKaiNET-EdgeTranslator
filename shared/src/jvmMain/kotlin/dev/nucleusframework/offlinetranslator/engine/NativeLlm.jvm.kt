@@ -7,6 +7,8 @@ import com.google.ai.edge.litertlm.Conversation
 import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
+import com.google.ai.edge.litertlm.ExperimentalApi
+import com.google.ai.edge.litertlm.ExperimentalFlags
 import com.google.ai.edge.litertlm.SamplerConfig
 // litertlm-jvm 0.14.0 has no ThinkingConfig / maxOutputToken (added in 0.15+).
 // import com.google.ai.edge.litertlm.ThinkingConfig
@@ -19,7 +21,6 @@ import io.ktor.client.plugins.HttpTimeout
 internal actual class NativeLlm actual constructor() {
     private var engine: Engine? = null
     private var conversation: Conversation? = null
-    private var conversationSystem: String? = null
     private var worker: LinuxGpuWorkerProcess? = null
     private var loadedModelPath: String? = null
     private var loadedCacheDir: String? = null
@@ -115,8 +116,8 @@ internal actual class NativeLlm actual constructor() {
         onPartial: (String) -> Unit = {},
     ): String {
         val e = engine ?: error("Gemma 4 E2B n'est pas chargé.")
-        val conv = conversation?.takeIf { conversationSystem == systemInstruction }
-            ?: openConversation(e, systemInstruction)
+        // Fresh conversation every turn: reuse fills maxNumTokens and generate goes silent.
+        val conv = openConversation(e, systemInstruction)
         val acc = StringBuilder()
         val contents = Contents.of(
             buildList {
@@ -130,14 +131,16 @@ internal actual class NativeLlm actual constructor() {
                 acc.append(chunk.toString())
                 onPartial(acc.toString())
             }
+            return acc.toString()
         } catch (e: kotlinx.coroutines.CancellationException) {
             if (!linuxNativeTeardownUnsafe()) runCatching { conv.cancelProcess() }
             throw e
         } catch (t: Throwable) {
             if (!linuxNativeTeardownUnsafe()) runCatching { conv.cancelProcess() }
             throw t
+        } finally {
+            releaseConversation()
         }
-        return acc.toString()
     }
 
     actual fun close() {
@@ -177,14 +180,12 @@ internal actual class NativeLlm actual constructor() {
             ),
         )
         conversation = next
-        conversationSystem = systemInstruction
         return next
     }
 
     private fun releaseConversation() {
         val current = conversation
         conversation = null
-        conversationSystem = null
         // Official Kotlin samples keep the conversation open. nativeDeleteConversation
         // after a GPU turn SIGILL's in NVIDIA's shader compiler (libnvidia-gpucomp);
         // same "prints then dies" shape as LiteRT-LM#2570.
@@ -194,7 +195,9 @@ internal actual class NativeLlm actual constructor() {
     }
 }
 
+@OptIn(ExperimentalApi::class)
 private fun openEngine(modelPath: String, cacheDir: String, backend: Backend): Engine {
+    ExperimentalFlags.enableSpeculativeDecoding = LlmRuntime.mtp
     val created = Engine(
         EngineConfig(
             modelPath = modelPath,

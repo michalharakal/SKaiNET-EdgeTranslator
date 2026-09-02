@@ -250,6 +250,25 @@ private fun ModelSection(
             modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 14.dp),
         )
         Divider()
+        ChipsRow(stringResource(Res.string.settings_mtp)) {
+            Chip(
+                stringResource(Res.string.settings_mtp_off),
+                selected = !settings.mtp,
+                onClick = { onIntent(AppIntent.SetMtp(false)) },
+            )
+            Chip(
+                stringResource(Res.string.settings_mtp_on),
+                selected = settings.mtp,
+                onClick = { onIntent(AppIntent.SetMtp(true)) },
+            )
+        }
+        Text(
+            stringResource(Res.string.settings_mtp_body),
+            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 14.dp),
+        )
+        Divider()
         SectionLabel(
             "Gemma · LiteRT-LM",
             Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 4.dp),

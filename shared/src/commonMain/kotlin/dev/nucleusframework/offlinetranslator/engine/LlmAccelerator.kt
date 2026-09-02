@@ -20,6 +20,10 @@ object LlmRuntime {
     @Volatile
     var skainetFamily: SkaiNetFamily = SkaiNetFamily.LLAMA
 
+    /** Gemma 4 MTP. Read when a new Engine is created. */
+    @Volatile
+    var mtp: Boolean = false
+
     private val _accelerator = MutableStateFlow(LlmAccelerator.None)
     val accelerator: StateFlow<LlmAccelerator> = _accelerator.asStateFlow()
 

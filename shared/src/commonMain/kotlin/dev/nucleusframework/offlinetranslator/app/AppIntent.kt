@@ -56,6 +56,7 @@ sealed interface AppIntent {
     data class SetTranslationEngine(val engine: TranslationEngine) : AppIntent
     data class SetSkaiNetFamily(val family: SkaiNetFamily) : AppIntent
     data class SetLlmKeepAlive(val mode: LlmKeepAlive) : AppIntent
+    data class SetMtp(val on: Boolean) : AppIntent
 
     data class PauseDownload(val target: DownloadTarget) : AppIntent
     data class ResumeDownload(val target: DownloadTarget) : AppIntent
