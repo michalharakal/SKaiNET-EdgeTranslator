@@ -22,6 +22,19 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
+    packaging {
+        resources {
+            // kotlinx-coroutines-core and kotlinx-serialization-json both publish a "-metadata"
+            // KMP artifact bundling Kotlin/Native klib common-metadata (.knm files, manifest,
+            // linkdata index) under commonMain/** and nativeMain/** at the SAME paths in both
+            // jars — cross-compile tooling data, never loaded at runtime on Android (which only
+            // uses the JVM-target classfiles), so the whole tree is safe to drop from the merge.
+            excludes += "commonMain/**"
+            excludes += "nativeMain/**"
+            excludes += "META-INF/kotlin-project-structure-metadata.json"
+        }
+    }
 }
 
 kotlin {

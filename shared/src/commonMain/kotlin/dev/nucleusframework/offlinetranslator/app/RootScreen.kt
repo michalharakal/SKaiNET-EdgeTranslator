@@ -88,7 +88,7 @@ private fun AppNavDisplay(backStack: NavBackStack<AppKey>, state: AppState, onIn
                 TranslationContent(
                     translation = state.translation,
                     settings = state.data.settings,
-                    modelInstalled = state.data.model.installed,
+                    modelInstalled = state.activeModelInstalled,
                     voiceDownload = state.voiceDownload,
                     onIntent = onIntent,
                 )
@@ -97,7 +97,7 @@ private fun AppNavDisplay(backStack: NavBackStack<AppKey>, state: AppState, onIn
                 ProofreadContent(
                     proofread = state.proofread,
                     uiLanguage = state.data.settings.uiLanguage,
-                    modelInstalled = state.data.model.installed,
+                    modelInstalled = state.activeModelInstalled,
                     onIntent = onIntent,
                 )
             }
@@ -114,6 +114,8 @@ private fun AppNavDisplay(backStack: NavBackStack<AppKey>, state: AppState, onIn
                     settings = state.data.settings,
                     model = state.data.model,
                     download = state.download,
+                    skainetModels = state.data.skainetModels,
+                    skainetDownloads = state.skainetDownloads,
                     voiceDownload = state.voiceDownload,
                     ttsReady = state.translation.ttsReady,
                     sourceLang = state.translation.sourceLang,

@@ -2,7 +2,11 @@ package dev.nucleusframework.offlinetranslator.di
 
 import app.cash.sqldelight.db.SqlDriver
 import dev.nucleusframework.offlinetranslator.data.createSqlDriver
+import dev.nucleusframework.offlinetranslator.engine.EngineSwitchingTranslator
+import dev.nucleusframework.offlinetranslator.engine.GemmaTranslator
 import dev.nucleusframework.offlinetranslator.engine.MicRecorder
+import dev.nucleusframework.offlinetranslator.engine.SkaiNetTranslator
+import dev.nucleusframework.offlinetranslator.engine.Translator
 import dev.nucleusframework.offlinetranslator.engine.TtsSpeaker
 import dev.nucleusframework.offlinetranslator.engine.createHttpClient
 import dev.nucleusframework.offlinetranslator.engine.createMicRecorder
@@ -40,4 +44,18 @@ object AppBindings {
 
     @Provides
     fun provideTtsSpeaker(http: HttpClient): TtsSpeaker = createTtsSpeaker(http)
+
+    @Provides
+    @LiteRtEngine
+    fun provideLiteRtTranslator(): Translator = GemmaTranslator()
+
+    @Provides
+    @SkaiNetEngine
+    fun provideSkaiNetTranslator(): Translator = SkaiNetTranslator()
+
+    @Provides
+    fun provideTranslator(
+        @LiteRtEngine liteRt: Translator,
+        @SkaiNetEngine skaiNet: Translator,
+    ): Translator = EngineSwitchingTranslator(liteRt, skaiNet)
 }

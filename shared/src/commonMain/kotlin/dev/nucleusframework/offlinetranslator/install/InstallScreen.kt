@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.skydoves.compose.stability.runtime.TraceRecomposition
 import dev.nucleusframework.offlinetranslator.app.AppIntent
+import dev.nucleusframework.offlinetranslator.app.DownloadTarget
 import dev.nucleusframework.offlinetranslator.app.InstallStep
 import dev.nucleusframework.offlinetranslator.domain.DownloadPhase
 import dev.nucleusframework.offlinetranslator.domain.DownloadState
@@ -482,7 +483,7 @@ private fun DownloadStep(settings: UserSettings, d: DownloadState, ttsReady: Boo
             )
             Spacer(Modifier.height(28.dp))
 
-            DownloadPanel(d, ui, onIntent)
+            DownloadPanel(d, ui, onIntent, target = DownloadTarget.Gemma)
             Spacer(Modifier.height(20.dp))
 
             Column {

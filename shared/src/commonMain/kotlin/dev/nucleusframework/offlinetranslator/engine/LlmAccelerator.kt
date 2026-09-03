@@ -1,6 +1,8 @@
 package dev.nucleusframework.offlinetranslator.engine
 
 import dev.nucleusframework.offlinetranslator.domain.LlmBackend
+import dev.nucleusframework.offlinetranslator.domain.SkaiNetFamily
+import dev.nucleusframework.offlinetranslator.domain.TranslationEngine
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -10,6 +12,13 @@ enum class LlmAccelerator { None, Cpu, Gpu, Npu }
 object LlmRuntime {
     @Volatile
     var preference: LlmBackend = LlmBackend.Auto
+
+    @Volatile
+    var engine: TranslationEngine = TranslationEngine.LiteRt
+
+    /** Which family runs when [engine] is [TranslationEngine.SkaiNet] — set the same way as [engine]. */
+    @Volatile
+    var skainetFamily: SkaiNetFamily = SkaiNetFamily.LLAMA
 
     /** Gemma 4 MTP. Read when a new Engine is created. */
     @Volatile

@@ -24,9 +24,14 @@ internal expect object Platform {
     suspend fun sha256(path: String): String?
     fun rename(from: String, to: String): Boolean
     fun writeAppend(path: String, bytes: ByteArray, offset: Int, length: Int)
+    /** Random-access write for chunked downloads — [path] must already be at least [offset] + [length] bytes (see [preallocate]). */
+    fun writeAt(path: String, offset: Long, bytes: ByteArray, srcOffset: Int, length: Int)
+    /** Extends (or truncates) [path] to exactly [size] bytes so concurrent [writeAt] chunk writers can each seek within range. */
+    fun preallocate(path: String, size: Long)
     fun truncate(path: String)
     fun now(): Long
     fun applyLocale(tag: String)
+    fun getEnv(name: String): String?
 
     /**
      * The OS language, captured at startup — [applyLocale] overwrites the default locale, so this

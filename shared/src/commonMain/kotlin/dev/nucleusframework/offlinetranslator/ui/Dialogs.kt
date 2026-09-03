@@ -74,6 +74,11 @@ private fun ConfirmDialog(d: AppDialog.Confirm, onIntent: (AppIntent) -> Unit) {
             stringResource(if (action.id == LlmModel.Precise) Res.string.model_precise_title else Res.string.model_fast_title),
         )
 
+        is ConfirmAction.DeleteSkaiNetModel -> stringResource(
+            Res.string.confirm_delete_model,
+            stringResource(if (action.id == LlmModel.Precise) Res.string.model_precise_title else Res.string.model_fast_title),
+        )
+
         is ConfirmAction.DeleteVoice -> stringResource(
             Res.string.confirm_delete_voice,
             PiperVoices.of(action.lang)?.displayName ?: Languages.get(action.lang)?.native ?: action.lang,

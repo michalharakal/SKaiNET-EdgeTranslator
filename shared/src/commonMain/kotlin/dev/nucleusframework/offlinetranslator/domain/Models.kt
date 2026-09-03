@@ -57,6 +57,19 @@ enum class ThemeMode { System, Light, Dark }
 
 enum class LlmBackend { Auto, Npu, Gpu, Cpu }
 
+/** Which inference engine runs translation. SKaiNet has no GPU/NPU backend — CPU only. */
+enum class TranslationEngine { LiteRt, SkaiNet }
+
+/**
+ * Which model family the SkaiNet engine runs — orthogonal to [LlmModel]'s Fast/Precise size tier.
+ * Adding a family (e.g. BitNet) is a new entry here plus catalog rows in `SkaiNetModels`, not a
+ * new copy of the SkaiNet intents/ViewModel functions/Settings block.
+ */
+enum class SkaiNetFamily(val id: String, val displayName: String) {
+    LLAMA("llama", "Llama"),
+    GEMMA("gemma", "Gemma"),
+}
+
 /** When the LLM stays in RAM. OnDemand loads on first use and unloads after idle. */
 enum class LlmKeepAlive { OnDemand, AlwaysOn }
 
@@ -133,7 +146,12 @@ data class UserSettings(
     val shortcut: String = "⌘⌃ T",
     val modelDir: String = "",
     val selectedModel: LlmModel = LlmModel.Fast,
+    /** Which family runs when [engine] is [TranslationEngine.SkaiNet]. */
+    val skainetFamily: SkaiNetFamily = SkaiNetFamily.LLAMA,
+    /** The Fast/Precise pick within each SkaiNet family's own catalog, independent of [selectedModel] (LiteRT/Gemma's pick). */
+    val skainetSelection: Map<SkaiNetFamily, LlmModel> = SkaiNetFamily.entries.associateWith { LlmModel.Fast },
     val backend: LlmBackend = LlmBackend.Auto,
+    val engine: TranslationEngine = TranslationEngine.LiteRt,
     val keepAlive: LlmKeepAlive = LlmKeepAlive.OnDemand,
     /** Gemma 4 multi-token prediction. Off by default — opt in from Settings. */
     val mtp: Boolean = false,
@@ -240,6 +258,13 @@ data class AppData(
     val lastTargetLang: String = "en",
     val history: List<HistoryItem> = emptyList(),
     val model: ModelInfo = ModelInfo(),
+    val skainetModels: Map<SkaiNetFamily, ModelInfo> = defaultSkainetModels(),
+)
+
+/** Per-family seed [ModelInfo] — display defaults before anything is actually installed. */
+fun defaultSkainetModels(): Map<SkaiNetFamily, ModelInfo> = mapOf(
+    SkaiNetFamily.LLAMA to ModelInfo(name = "Llama 3.2 1B Instruct", version = "1.0", quantization = "Q4_K_M"),
+    SkaiNetFamily.GEMMA to ModelInfo(name = "Gemma 4 E2B Instruct", version = "1.0", quantization = "Q4_K_M"),
 )
 
 const val MODEL_BYTES = 2_588_147_712L

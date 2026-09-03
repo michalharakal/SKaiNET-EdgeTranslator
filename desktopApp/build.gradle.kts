@@ -4,6 +4,7 @@ import dev.nucleusframework.desktop.application.dsl.NativeImageOptimization
 import dev.nucleusframework.desktop.application.dsl.ReleaseChannel
 import dev.nucleusframework.desktop.application.dsl.ReleaseType
 import dev.nucleusframework.desktop.application.dsl.TargetFormat
+import org.gradle.api.tasks.JavaExec
 import org.gradle.jvm.toolchain.JvmVendorSpec
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.io.File
@@ -18,11 +19,14 @@ plugins {
 }
 
 kotlin {
-    compilerOptions { jvmTarget.set(JvmTarget.JVM_25) }
+    // SKaiNET's Vector API SIMD path (jdk.incubator.vector) is only being exercised reliably
+    // on a plain JDK 21 toolchain — see docs/PERF-LOGBOOK.md. Matches `shared`'s own JVM_21
+    // target (shared/build.gradle.kts) instead of running ahead of it on 25.
+    compilerOptions { jvmTarget.set(JvmTarget.JVM_21) }
 }
 
 java {
-    toolchain { languageVersion.set(JavaLanguageVersion.of(25)) }
+    toolchain { languageVersion.set(JavaLanguageVersion.of(21)) }
 }
 
 dependencies {
@@ -52,7 +56,11 @@ nucleus.application {
             .metadata.installationPath.asFile.absolutePath
 
     graalvm {
-        isEnabled = true
+        // Disabled for local dev: with this on, nucleus forces `:run` onto the GraalVM/25 JVM
+        // below regardless of the `java.toolchain`/`javaHome` set above, which was blocking
+        // SKaiNET's Vector API SIMD kernel provider (see docs/PERF-LOGBOOK.md). Re-enable
+        // before a real native-image packaging build (`packageNativeExe` etc. need this).
+        isEnabled = false
         javaLanguageVersion = 25
         jvmVendor = JvmVendorSpec.ORACLE
         imageName = "EdgeTranslator"
@@ -224,4 +232,19 @@ val resolveLinuxGpuLibs = tasks.register("resolveLinuxGpuLibs") {
 
 tasks.matching { it.name == "prepareAppResources" }.configureEach {
     dependsOn(resolveWindowsDxc, resolveLinuxGpuLibs)
+}
+
+// SKaiNET's Panama/Vector-accelerated kernel provider needs jdk.incubator.vector explicitly
+// added — without it, PlatformCpuOpsFactory.jvm.kt's Class.forName probe fails and every
+// matmul falls back to the scalar provider (same flag `shared`'s jvmTest already passes).
+// nucleus's `run` task is JavaExec-based, but nucleus's own plugin configures/overwrites its
+// jvmArgs from inside its own `afterEvaluate` (registered when the plugin is applied, i.e.
+// before this script body runs) — a plain `tasks.withType<JavaExec>().configureEach { jvmArgs(...) }`
+// here was silently getting wiped out by that later reassignment. Registering our own
+// `afterEvaluate` guarantees this runs after nucleus's (afterEvaluate callbacks fire in
+// registration order), so this is the actual last word on the run task's jvmArgs.
+project.afterEvaluate {
+    tasks.withType<JavaExec>().configureEach {
+        jvmArgs("--enable-preview", "--add-modules", "jdk.incubator.vector")
+    }
 }
