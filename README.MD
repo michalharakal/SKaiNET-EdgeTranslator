@@ -2,6 +2,8 @@
 
 Translate offline, without a word leaving this device.
 
+This is the [SKaiNET](https://github.com/SKaiNET-developers/SKaiNET) fork of [NucleusFramework/EdgeTranslator](https://github.com/NucleusFramework/EdgeTranslator). It adds a second, pure-Kotlin translation engine next to LiteRT-LM — see [Trying the SKaiNET engine](#trying-the-skainet-engine).
+
 Desktop app for macOS, Windows, and Linux. The model runs on the machine. After install, text, speech, images, and favorites stay local — no outbound request. An Android app is planned.
 
 The interface is available in the same 35 languages as the catalog, including RTL (Arabic, Hebrew, Persian).
@@ -16,6 +18,7 @@ The interface is available in the same 35 languages as the catalog, including RT
 ## Features
 
 - On-device streaming translation, via [Gemma 4](https://ai.google.dev/gemma) and [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM)
+- Experimental second engine: [SKaiNET](https://github.com/SKaiNET-developers/SKaiNET), a pure-Kotlin inference stack that runs GGUF models (Llama 3.2, Gemma 4) with no native vendor binary
 - 35 languages (CC3M-35L / PaliGemma catalog), with automatic source-language detection
 - Proofreading: the same model corrects spelling and grammar in the language of the input
 - Dictation: speak up to 30 seconds, transcribed and translated on-device (Gemma 4 FLEURS, 12 languages)
@@ -82,7 +85,8 @@ Gemma models are covered by Google’s [Gemma license](https://ai.google.dev/gem
 
 ## Requirements
 
-- JDK 25 or newer (to build or run from source)
+- JDK 21 installed (to build or run from source). The build uses a JDK 21 toolchain and does not download one, so a machine with only a newer JDK will fail at configuration. Gradle itself can run on the same JDK 21.
+- No Android SDK is needed for the desktop app. Building `:androidApp` does need one.
 - Internet connection only to download a model, a voice, or an app update
 - Microphone optional (dictation)
 
@@ -126,6 +130,35 @@ Native packages (GraalVM — DMG / Zip / NSIS / Deb):
 ```
 
 Pushing a `v*` tag builds these packages for Linux (x64, ARM64), macOS (Intel, Apple Silicon), and Windows (x64), then publishes them as a GitHub Release.
+
+## Trying the SKaiNET engine
+
+The app starts on LiteRT-LM. SKaiNET is a second engine behind an experimental switch, so nothing changes until you turn it on. It runs on desktop today and is slower than LiteRT-LM; the point is that the whole inference stack is Kotlin, so any GGUF model works and anything that breaks can be fixed here rather than waited on.
+
+```bash
+git clone https://github.com/michalharakal/SKaiNET-EdgeTranslator.git
+cd SKaiNET-EdgeTranslator
+./gradlew :desktopApp:run
+```
+
+Then, in the app: **Settings → Engine (experimental) → SKaiNET**, pick a family (Llama or Gemma), and download a model from the list below. To skip the clicking for one launch, set an environment variable before starting:
+
+```bash
+EDGETRANSLATOR_ENGINE=skainet EDGETRANSLATOR_SKAINET_FAMILY=gemma ./gradlew :desktopApp:run
+```
+
+Both variables are session-only overrides and never change the saved settings. Accepted values are `skainet` / `litert` and `llama` / `gemma`.
+
+SKaiNET models are quantized GGUF files (Q4_K_M) from Unsloth's public Hugging Face repositories. No account or token is needed.
+
+| Family | Profile | Model | Size | Repository |
+|--------|---------|-------|------|------------|
+| Llama | Fast | Llama 3.2 1B Instruct | ~0.8 GB | [unsloth/Llama-3.2-1B-Instruct-GGUF](https://huggingface.co/unsloth/Llama-3.2-1B-Instruct-GGUF) |
+| Llama | Precision | Llama 3.2 3B Instruct | ~2.0 GB | [unsloth/Llama-3.2-3B-Instruct-GGUF](https://huggingface.co/unsloth/Llama-3.2-3B-Instruct-GGUF) |
+| Gemma | Fast | Gemma 4 E2B Instruct | ~3.1 GB | [unsloth/gemma-4-E2B-it-GGUF](https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF) |
+| Gemma | Precision | Gemma 4 E4B Instruct | ~5.0 GB | [unsloth/gemma-4-E4B-it-GGUF](https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF) |
+
+The engine versions are pinned in `gradle/libs.versions.toml` (`skainet` and `skainetTransformers`, kept in lockstep). Benchmarks against LiteRT-LM are collected in `docs/PERF-LOGBOOK.md`.
 
 ## Layout
 
