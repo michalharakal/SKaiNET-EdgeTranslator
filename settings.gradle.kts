@@ -33,6 +33,7 @@ dependencyResolutionManagement {
 include(":shared")
 include(":androidApp")
 include(":desktopApp")
+include(":bench")
 
 // Composite-build substitution for iterating on local SKaiNET / SKaiNET-transformers source
 // without a publishToMavenLocal round-trip (source changes are picked up on the next build).

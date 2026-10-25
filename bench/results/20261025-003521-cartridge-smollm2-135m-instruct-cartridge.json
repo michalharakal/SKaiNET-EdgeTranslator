@@ -1,0 +1,30 @@
+{
+  "env": {"timestamp": "2026-10-25T00:35:21.770598", "os": "Mac OS X 27.0.1", "arch": "aarch64", "cpu": "Apple M4 Pro", "jdk": "21.0.10", "skainet": "0.62.2", "skainetTransformers": "0.63.1", "litertlm": "0.14.0"},
+  "engine": "cartridge",
+  "model": "SmolLM2-135M-Instruct cartridge",
+  "modelPath": "cartridge:smollm2",
+  "mode": "Translate",
+  "loadMs": 489,
+  "peakHeapMb": 4235,
+  "peakRssMb": 5394,
+  "runs": [
+    {"promptId": "short-en-de", "ttftMs": 434, "e2eMs": 516, "engineLatencyMs": 517, "decodeSteps": 5, "decodeStepsPerSec": 48.780, "outputChars": 15, "charsPerSec": 29.07},
+    {"promptId": "short-de-en", "ttftMs": 460, "e2eMs": 4647, "engineLatencyMs": 4648, "decodeSteps": 256, "decodeStepsPerSec": 60.903, "outputChars": 461, "charsPerSec": 99.20},
+    {"promptId": "short-en-fr", "ttftMs": 412, "e2eMs": 3954, "engineLatencyMs": 3955, "decodeSteps": 256, "decodeStepsPerSec": 71.993, "outputChars": 436, "charsPerSec": 110.27},
+    {"promptId": "med-en-es", "ttftMs": 492, "e2eMs": 4065, "engineLatencyMs": 4066, "decodeSteps": 256, "decodeStepsPerSec": 71.369, "outputChars": 412, "charsPerSec": 101.35},
+    {"promptId": "med-sk-en", "ttftMs": 699, "e2eMs": 4329, "engineLatencyMs": 4329, "decodeSteps": 256, "decodeStepsPerSec": 70.248, "outputChars": 340, "charsPerSec": 78.54},
+    {"promptId": "long-en-de", "ttftMs": 751, "e2eMs": 4413, "engineLatencyMs": 4414, "decodeSteps": 256, "decodeStepsPerSec": 69.634, "outputChars": 417, "charsPerSec": 94.49},
+    {"promptId": "short-en-de", "ttftMs": 397, "e2eMs": 462, "engineLatencyMs": 463, "decodeSteps": 5, "decodeStepsPerSec": 61.538, "outputChars": 15, "charsPerSec": 32.47},
+    {"promptId": "short-de-en", "ttftMs": 431, "e2eMs": 3969, "engineLatencyMs": 3970, "decodeSteps": 256, "decodeStepsPerSec": 72.075, "outputChars": 461, "charsPerSec": 116.15},
+    {"promptId": "short-en-fr", "ttftMs": 397, "e2eMs": 3951, "engineLatencyMs": 3952, "decodeSteps": 256, "decodeStepsPerSec": 71.750, "outputChars": 436, "charsPerSec": 110.35},
+    {"promptId": "med-en-es", "ttftMs": 495, "e2eMs": 4062, "engineLatencyMs": 4062, "decodeSteps": 256, "decodeStepsPerSec": 71.489, "outputChars": 412, "charsPerSec": 101.43},
+    {"promptId": "med-sk-en", "ttftMs": 689, "e2eMs": 4325, "engineLatencyMs": 4326, "decodeSteps": 256, "decodeStepsPerSec": 70.132, "outputChars": 340, "charsPerSec": 78.61},
+    {"promptId": "long-en-de", "ttftMs": 759, "e2eMs": 4488, "engineLatencyMs": 4489, "decodeSteps": 256, "decodeStepsPerSec": 68.383, "outputChars": 417, "charsPerSec": 92.91},
+    {"promptId": "short-en-de", "ttftMs": 412, "e2eMs": 478, "engineLatencyMs": 478, "decodeSteps": 5, "decodeStepsPerSec": 60.606, "outputChars": 15, "charsPerSec": 31.38},
+    {"promptId": "short-de-en", "ttftMs": 479, "e2eMs": 4095, "engineLatencyMs": 4095, "decodeSteps": 256, "decodeStepsPerSec": 70.520, "outputChars": 461, "charsPerSec": 112.58},
+    {"promptId": "short-en-fr", "ttftMs": 420, "e2eMs": 3975, "engineLatencyMs": 3976, "decodeSteps": 256, "decodeStepsPerSec": 71.730, "outputChars": 436, "charsPerSec": 109.69},
+    {"promptId": "med-en-es", "ttftMs": 495, "e2eMs": 4086, "engineLatencyMs": 4087, "decodeSteps": 256, "decodeStepsPerSec": 71.011, "outputChars": 412, "charsPerSec": 100.83},
+    {"promptId": "med-sk-en", "ttftMs": 684, "e2eMs": 4431, "engineLatencyMs": 4432, "decodeSteps": 256, "decodeStepsPerSec": 68.054, "outputChars": 340, "charsPerSec": 76.73},
+    {"promptId": "long-en-de", "ttftMs": 777, "e2eMs": 4476, "engineLatencyMs": 4477, "decodeSteps": 256, "decodeStepsPerSec": 68.938, "outputChars": 417, "charsPerSec": 93.16}
+  ]
+}
