@@ -39,9 +39,13 @@ end-to-end in the actual desktop app (not just headless):
   alive just signals the old one and exits in ~1s — always `ps aux | grep desktopApp.jar` and
   kill stale instances before relaunching, or you'll test against stale code.
 
-`gradle/libs.versions.toml` currently pins `skainet=0.40.2` / `skainetTransformers=0.40.3` as
-**local-only `mavenLocal()` builds**, not on Maven Central — carrying the #991/#992/#993 fixes
-pending a real upstream release. `settings.gradle.kts` has an opt-in composite build
+**STALE PIN NOTE (updated 2026-10-25):** `gradle/libs.versions.toml` now pins
+`skainet=0.62.2` / `skainetTransformers=0.63.1` — both **official Maven Central releases**
+(the interim 0.40.x mavenLocal builds and, later, the 0.53.0 pins are history; the
+#991/#992/#993 fixes shipped upstream long ago). The engine is deliberately ahead of the
+transformers BOM's own 0.62.0 pin: 0.62.1 fixed SKaiNET#1436 (multi-row native quant kernels),
+0.62.2 added the scheduled/AVX2 dense path. A `:bench` module now exists for before/after
+numbers (`./gradlew :bench:run`, see docs/PERF-LOGBOOK.md). `settings.gradle.kts` has an opt-in composite build
 (`-PuseLocalSkainet=true` / `-PuseLocalSkainetTransformers=true`) as an alternative to the
 mavenLocal republish cycle — **now fully working for both halves** (fixed 2026-08-15, see the
 Gemma 4 handover section below for the root cause and fix — it was a project-name-vs-artifactId

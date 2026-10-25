@@ -21,15 +21,22 @@ nucleus = "2.5.7"
 # good desktop JNI. https://github.com/google-ai-edge/LiteRT-LM/issues/3230
 litertlm = "0.14.0"
 # SKaiNET engine + transformers LLM layer.
-# Both are official Maven Central releases (sk.ainet:skainet-bom 0.53.0 and
-# sk.ainet.transformers:skainet-transformers-bom 0.53.0), kept in lockstep: the transformers
-# family loaders are built on the engine's StreamingGgufParametersLoader/WeightForm surface
-# (MAPPED residency, zero-copy weight serving, per-step forwardScope, BitNet family), so the
-# two versions must match.
-# Re-run docs/PERF-LOGBOOK.md's benchmark before bumping further (SKaiNET-transformers docs:
-# "nothing here is stable").
-skainet = "0.53.0"
-skainetTransformers = "0.53.0"
+# Both are official Maven Central releases. transformers 0.63.1's own BOM pins engine 0.62.0,
+# but the engine is pinned explicitly to 0.62.2 here: 0.62.1 fixed SKaiNET#1436 (multi-row
+# Q8_0/Q4_0/Q5_x native kernels zeroed every output row but the last — directly on the app's
+# Q4_K_M decode path) and 0.62.2 adds the scheduled/AVX2 dense x·Wᵀ path.
+# Re-run `./gradlew :bench:run` (docs/PERF-LOGBOOK.md) before bumping further
+# (SKaiNET-transformers docs: "nothing here is stable").
+skainet = "0.62.2"
+skainetTransformers = "0.63.1"
+# SKaiNET cartridges (llm/v1 task profile + the SmolLM2 generator cartridge) — published to
+# mavenLocal from the SKaiNET-cartridge-blueprints sibling clone:
+#   ./gradlew :profiles:llm-v1:publishToMavenLocal :blueprints:generator-smollm2-skainet:publishToMavenLocal
+# The cartridge is self-contained (pins its own transformers 0.57.1 internally); desktop-only
+# for now — it publishes jvm + apple targets, no android.
+cartridgeLlmV1 = "0.1.0"
+cartridgeSmollm2 = "0.1.0-SNAPSHOT"
+cartridgeLlama32 = "0.1.0-SNAPSHOT"
 filekit = "0.15.0"
 structured-coroutines = "1.1.1"
 piper-jni = "1.4.2"
@@ -115,6 +122,12 @@ skainet-transformers-inference-gemma = { module = "sk.ainet.transformers:skainet
 skainet-transformers-providers = { module = "sk.ainet.transformers:skainet-transformers-providers" }
 skainet-transformers-api = { module = "sk.ainet.transformers:skainet-transformers-api" }
 skainet-transformers-agent = { module = "sk.ainet.transformers:skainet-transformers-agent" }
+# SKaiNET cartridges: the llm/v1 task-profile contract and the SmolLM2 generator cartridge
+# (weights NOT included — the cartridge opens the pinned snapshot from
+# ~/.cache/skainet/models/HuggingFaceTB_SmolLM2-135M-Instruct or $SMOLLM2_MODEL_DIR).
+cartridge-profile-llm-v1 = { module = "sk.ainet.cartridge.profiles:llm-v1", version.ref = "cartridgeLlmV1" }
+cartridge-generator-smollm2 = { module = "sk.ainet.cartridge:generator-smollm2-skainet", version.ref = "cartridgeSmollm2" }
+cartridge-generator-llama32 = { module = "sk.ainet.cartridge:generator-llama32-1b-skainet", version.ref = "cartridgeLlama32" }
 filekit-core = { module = "io.github.vinceglb:filekit-core", version.ref = "filekit" }
 filekit-dialogs = { module = "io.github.vinceglb:filekit-dialogs", version.ref = "filekit" }
 piper-jni = { module = "io.github.jvoice-project:piper-jni", version.ref = "piper-jni" }

@@ -15,13 +15,11 @@ import sk.ainet.apps.llm.InferenceRuntime
 import sk.ainet.apps.llm.OptimizedLLMMode
 import sk.ainet.apps.llm.OptimizedLLMRuntime
 import sk.ainet.apps.llm.Tokenizer
-import sk.ainet.apps.llm.tokenizer.GGUFTokenizer
 import sk.ainet.apps.llm.tokenizer.TokenizerFactory
 import sk.ainet.backend.api.kernel.KernelPacks
 import sk.ainet.context.DirectCpuExecutionContext
 import sk.ainet.exec.kernel.jni.JniMappedKernelPack
 import sk.ainet.io.AndroidRandomAccessSource
-import sk.ainet.lang.memory.ExperimentalMemoryApi
 import sk.ainet.lang.types.FP32
 import sk.ainet.models.llama.DecoderGgufWeightLoader
 import sk.ainet.models.llama.LlamaNetworkLoader
@@ -39,7 +37,7 @@ private val kernelsInstalled = AtomicBoolean(false)
  * kernel — correct, but dramatically slower per matmul. Format-based, not family-based — one
  * install call serves every family's weights.
  */
-@OptIn(ExperimentalMemoryApi::class)
+// Engine 0.54 removed the ExperimentalMemoryApi opt-in — the memory API is stable now.
 private fun ensureKernelPacksInstalled() {
     if (!kernelsInstalled.compareAndSet(false, true)) return
     KernelPacks.install()
@@ -90,12 +88,11 @@ internal actual class SkaiNetLlm actual constructor() {
                 runtime = kotlinx.coroutines.runBlocking {
                     ingestion.loadDslRuntimeStreaming { AndroidRandomAccessSource.open(modelPath) }
                 }
-                // TokenizerFactory.fromGgufSource dispatches on tokenizer.ggml.model, which has no
-                // "gemma4" case yet — throws UnsupportedTokenizerException. GGUFTokenizer itself is
-                // already Gemma-4-aware (see its addSpacePrefix doc), so this bypasses that stale
-                // allowlist the same way SKaiNET-transformers' own Gemma4ChatModel.fromGguf does.
+                // 0.58+ TokenizerFactory is engine-backed with Gemma 4 goldens and handles these
+                // GGUFs (upstream's own GemmaChatModel.fromGguf uses this exact call) — the old
+                // GGUFTokenizer bypass for the missing "gemma4" allowlist case is gone with it.
                 val tok = AndroidRandomAccessSource.open(modelPath).use { source ->
-                    GGUFTokenizer.fromRandomAccessSource(source)
+                    TokenizerFactory.fromGgufSource(source)
                 }
                 tokenizer = tok
                 eosTokenId = tok.eosTokenId
