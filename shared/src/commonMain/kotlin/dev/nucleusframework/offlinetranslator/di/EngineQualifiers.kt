@@ -7,3 +7,6 @@ annotation class LiteRtEngine
 
 @Qualifier
 annotation class SkaiNetEngine
+
+@Qualifier
+annotation class CartridgeEngine

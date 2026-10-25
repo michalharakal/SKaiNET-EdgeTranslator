@@ -158,7 +158,42 @@ SKaiNET models are quantized GGUF files (Q4_K_M) from Unsloth's public Hugging F
 | Gemma | Fast | Gemma 4 E2B Instruct | ~3.1 GB | [unsloth/gemma-4-E2B-it-GGUF](https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF) |
 | Gemma | Precision | Gemma 4 E4B Instruct | ~5.0 GB | [unsloth/gemma-4-E4B-it-GGUF](https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF) |
 
-The engine versions are pinned in `gradle/libs.versions.toml` (`skainet` and `skainetTransformers`, kept in lockstep). Benchmarks against LiteRT-LM are collected in `docs/PERF-LOGBOOK.md`.
+The engine versions are pinned in `gradle/libs.versions.toml` (`skainet` and `skainetTransformers`; the engine pin deliberately runs ahead of the transformers BOM — the comment there says why). Benchmarks against LiteRT-LM are collected in `docs/PERF-LOGBOOK.md`, produced by the headless harness: `./gradlew :bench:run --args="--engine=skainet|litert|cartridge"`.
+
+## Trying SKaiNET cartridges
+
+The third engine is the newest part of the story: a [SKaiNET cartridge](https://github.com/SKaiNET-developers/SKaiNET-cartridge) — a self-contained package (model + runtime + signed descriptor) built from an open [blueprint](https://github.com/SKaiNET-developers/SKaiNET-cartridge-blueprints). The app consumes it through the `llm/v1` task profile and never sees a model file, a tokenizer, or a chat template; the whole host-side integration is:
+
+```kotlin
+val engine = Llama32GeneratorCartridge.open()                    // suspend; the cartridge knows its checkpoint
+val session = engine.session(LlmSessionConfig(temperature = 0f))
+session.prompt(listOf(LlmMessage(LlmRole.SYSTEM, system), LlmMessage(LlmRole.USER, text)))
+session.events.collect { if (it is LlmEvent.Delta) print(it.text) }  // Ready → Delta* → Final
+```
+
+Translation and proofreading ride the same session — llm/v1 passes messages as data, so the two features differ only in the system prompt.
+
+Two cartridges are wired: the default is `generator-llama32-1b-skainet` (the same Llama-3.2-1B
+the SKaiNET engine runs, as a cartridge — real translation quality); set
+`EDGETRANSLATOR_CARTRIDGE=smollm2` for the tiny SmolLM2-135M packaging demo. To try it
+(desktop only for now):
+
+```bash
+# 1. Build the cartridges from their blueprints (sibling clone) and publish to ~/.m2
+git clone https://github.com/SKaiNET-developers/SKaiNET-cartridge-blueprints.git ../SKaiNET-cartridge-blueprints
+(cd ../SKaiNET-cartridge-blueprints && ./gradlew :profiles:llm-v1:publishToMavenLocal \
+    :blueprints:generator-llama32-1b-skainet:publishToMavenLocal \
+    :blueprints:generator-smollm2-skainet:publishToMavenLocal)
+
+# 2. Fetch each cartridge's pinned checkpoint (SHA-256-verified) into the shared SKaiNET model
+#    cache (~/.cache/skainet/models/...) — see the blueprint READMEs. The Llama source is
+#    acceptance-required: the Llama 3.2 Community License is yours to accept, never defaulted.
+
+# 3. Run the app on the cartridge engine
+EDGETRANSLATOR_ENGINE=cartridge ./gradlew :desktopApp:run
+```
+
+Or in the app: **Settings → Engine (experimental) → Cartridge (Llama 1B)**. There is nothing to download in the app — a cartridge resolves its own pinned checkpoint and refuses to open on the wrong one.
 
 ## Layout
 

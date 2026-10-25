@@ -57,8 +57,12 @@ enum class ThemeMode { System, Light, Dark }
 
 enum class LlmBackend { Auto, Npu, Gpu, Cpu }
 
-/** Which inference engine runs translation. SKaiNet has no GPU/NPU backend — CPU only. */
-enum class TranslationEngine { LiteRt, SkaiNet }
+/**
+ * Which inference engine runs translation. SKaiNet has no GPU/NPU backend — CPU only.
+ * [Cartridge] runs a self-contained SKaiNET cartridge via the llm/v1 task profile (no model
+ * selection app-side — the cartridge pins its own checkpoint); desktop-only for now.
+ */
+enum class TranslationEngine { LiteRt, SkaiNet, Cartridge }
 
 /**
  * Which model family the SkaiNet engine runs — orthogonal to [LlmModel]'s Fast/Precise size tier.

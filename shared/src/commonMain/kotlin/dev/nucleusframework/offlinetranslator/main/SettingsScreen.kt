@@ -209,6 +209,11 @@ private fun ModelSection(
                 selected = settings.engine == TranslationEngine.SkaiNet,
                 onClick = { onIntent(AppIntent.SetTranslationEngine(TranslationEngine.SkaiNet)) },
             )
+            Chip(
+                "Cartridge (Llama 1B)",
+                selected = settings.engine == TranslationEngine.Cartridge,
+                onClick = { onIntent(AppIntent.SetTranslationEngine(TranslationEngine.Cartridge)) },
+            )
         }
         if (settings.engine == TranslationEngine.SkaiNet) {
             Divider()

@@ -2,6 +2,7 @@ package dev.nucleusframework.offlinetranslator.di
 
 import app.cash.sqldelight.db.SqlDriver
 import dev.nucleusframework.offlinetranslator.data.createSqlDriver
+import dev.nucleusframework.offlinetranslator.engine.CartridgeTranslator
 import dev.nucleusframework.offlinetranslator.engine.EngineSwitchingTranslator
 import dev.nucleusframework.offlinetranslator.engine.GemmaTranslator
 import dev.nucleusframework.offlinetranslator.engine.MicRecorder
@@ -54,8 +55,13 @@ object AppBindings {
     fun provideSkaiNetTranslator(): Translator = SkaiNetTranslator()
 
     @Provides
+    @CartridgeEngine
+    fun provideCartridgeTranslator(): Translator = CartridgeTranslator()
+
+    @Provides
     fun provideTranslator(
         @LiteRtEngine liteRt: Translator,
         @SkaiNetEngine skaiNet: Translator,
-    ): Translator = EngineSwitchingTranslator(liteRt, skaiNet)
+        @CartridgeEngine cartridge: Translator,
+    ): Translator = EngineSwitchingTranslator(liteRt, skaiNet, cartridge)
 }

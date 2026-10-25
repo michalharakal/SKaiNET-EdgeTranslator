@@ -10,9 +10,13 @@ import dev.nucleusframework.offlinetranslator.domain.TranslationEngine
 class EngineSwitchingTranslator(
     private val liteRt: Translator,
     private val skaiNet: Translator,
+    private val cartridge: Translator,
 ) : Translator {
-    private fun current(): Translator =
-        if (LlmRuntime.engine == TranslationEngine.SkaiNet) skaiNet else liteRt
+    private fun current(): Translator = when (LlmRuntime.engine) {
+        TranslationEngine.LiteRt -> liteRt
+        TranslationEngine.SkaiNet -> skaiNet
+        TranslationEngine.Cartridge -> cartridge
+    }
 
     override suspend fun translate(request: TranslationRequest): TranslationResult = current().translate(request)
 
@@ -21,10 +25,12 @@ class EngineSwitchingTranslator(
     override suspend fun release() {
         liteRt.release()
         skaiNet.release()
+        cartridge.release()
     }
 
     override fun close() {
         liteRt.close()
         skaiNet.close()
+        cartridge.close()
     }
 }

@@ -66,6 +66,8 @@ data class AppState(
                 info.installed && info.id == data.settings.skainetSelection.getValue(family)
             }
             TranslationEngine.LiteRt -> data.model.installed
+            // Self-contained: the cartridge resolves its own pinned snapshot at open time.
+            TranslationEngine.Cartridge -> true
         }
 }
 

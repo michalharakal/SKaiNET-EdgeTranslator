@@ -390,6 +390,7 @@ class AppViewModel(
             when (value) {
                 "skainet" -> LlmRuntime.engine = TranslationEngine.SkaiNet
                 "litert", "litertlm", "litert-lm" -> LlmRuntime.engine = TranslationEngine.LiteRt
+                "cartridge" -> LlmRuntime.engine = TranslationEngine.Cartridge
             }
         }
         // EDGETRANSLATOR_SKAINET_FAMILY=llama|gemma (case-insensitive); unset or unrecognized is a no-op.
@@ -1423,6 +1424,9 @@ class AppViewModel(
             SkaiNetModels.of(family, data.settings.skainetSelection.getValue(family)).takeIf { skainetModelOnDisk(it) }?.destPath().orEmpty()
         }
         TranslationEngine.LiteRt -> data.model.path
+        // Any non-blank sentinel: CartridgeTranslator ignores the path (the cartridge pins its
+        // own checkpoint), and blank would read as "model not installed" in the gates above.
+        TranslationEngine.Cartridge -> "cartridge:llm-v1"
     }
 
     private fun preloadIfKeptReady(path: String) {

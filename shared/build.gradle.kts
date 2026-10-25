@@ -104,6 +104,12 @@ kotlin {
             implementation(libs.nucleus.updater.runtime)
             implementation(libs.litertlm.jvm)
             implementation(libs.piper.jni)
+            // SKaiNET cartridges (llm/v1) — desktop-only for now: the SmolLM2 cartridge
+            // publishes jvm + apple targets, no android (CartridgeLlm.android.kt is a stub).
+            // The cartridge is self-contained and pins its own transformers internally.
+            implementation(libs.cartridge.profile.llm.v1)
+            implementation(libs.cartridge.generator.smollm2)
+            implementation(libs.cartridge.generator.llama32)
             implementation(project.dependencies.platform(libs.skainet.bom))
             implementation(libs.skainet.lang.core)
             implementation(libs.skainet.backend.native.cpu)
