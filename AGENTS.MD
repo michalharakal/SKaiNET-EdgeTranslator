@@ -40,11 +40,12 @@ end-to-end in the actual desktop app (not just headless):
   kill stale instances before relaunching, or you'll test against stale code.
 
 **STALE PIN NOTE (updated 2026-10-25):** `gradle/libs.versions.toml` now pins
-`skainet=0.62.2` / `skainetTransformers=0.63.1` — both **official Maven Central releases**
+`skainet=0.62.3` / `skainetTransformers=0.63.1` — both **official Maven Central releases**
 (the interim 0.40.x mavenLocal builds and, later, the 0.53.0 pins are history; the
 #991/#992/#993 fixes shipped upstream long ago). The engine is deliberately ahead of the
 transformers BOM's own 0.62.0 pin: 0.62.1 fixed SKaiNET#1436 (multi-row native quant kernels),
-0.62.2 added the scheduled/AVX2 dense path. A `:bench` module now exists for before/after
+0.62.2 added the scheduled/AVX2 dense path, 0.62.3 buffered the GGUF metadata parse +
+one-pass tokenizer build (model load 1411 → 394 ms measured). A `:bench` module now exists for before/after
 numbers (`./gradlew :bench:run`, see docs/PERF-LOGBOOK.md). `settings.gradle.kts` has an opt-in composite build
 (`-PuseLocalSkainet=true` / `-PuseLocalSkainetTransformers=true`) as an alternative to the
 mavenLocal republish cycle — **now fully working for both halves** (fixed 2026-08-15, see the

@@ -66,6 +66,12 @@ the Android Gemma tokenizer moving from deprecated `GGUFTokenizer` to the engine
 `TokenizerFactory.fromGgufSource`, and deleting the kgemma POM-leak exclude workaround
 (fixed upstream in 0.63.1).
 
+**0.62.2 → 0.62.3 follow-up (same day):** model load **1411 → 394 ms** on the raw engine path
+and cartridge `open()` **1661 → 650 ms** — upstream buffered the GGUF metadata parse and builds
+the tokenizer in one pass over the vocab. Decode/TTFT/e2e flat on this host (the 0.62.3 AVX2
+SGEMM lane is x86-64-only; Apple Silicon ran the same NEON kernels as before). Cartridge load
+is now ~4× faster than LiteRT's (650 vs 2533 ms).
+
 This is the real baseline the Phase 0 Qwen row above is not: the app's own code path,
 `NATIVE_OPTIMIZED` quantization, FFM native backend, the actual catalog model — ~51 tok/s
 decode vs. that row's 0.04 tok/s floor.
